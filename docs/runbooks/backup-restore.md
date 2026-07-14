@@ -1,3 +1,10 @@
+# Backup & restore runbook
+
+Operational procedure for backing up production, testing the restore locally,
+and restoring onto a live server (used for schema-change deploys, since schema
+is recreated rather than migrated). The automated equivalent runs bi-hourly via
+[backup.yml](../../.github/workflows/backup.yml).
+
 # 1. Backup
 ## Dev machine
 - `ssh ubuntu@dtrack.rethinkcode.org -i keys/prod/instance/id`
