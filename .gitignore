@@ -11,3 +11,6 @@ keys
 *.tar
 venv/
 backup/
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/

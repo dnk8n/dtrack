@@ -12,7 +12,8 @@ tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),st
 play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
-.PHONY: precommit infra infra-destroy play help dev debug initdb down clean
+.PHONY: precommit infra infra-destroy play help dev debug initdb down clean \
+	test test-db test-api test-e2e
 
 precommit:
 	pre-commit run --all-files
@@ -31,6 +32,19 @@ down:
 
 clean:
 	$(COMPOSE_DEBUG) down -v --remove-orphans
+
+# Test targets expect the stack up in debug mode with the database
+# bootstrapped (./initdb.sh && make debug). See docs/testing.md.
+test: test-db test-api test-e2e
+
+test-db:
+	./tests/run-db-tests.sh
+
+test-api:
+	./tests/run-api-tests.sh
+
+test-e2e:
+	./tests/run-e2e-tests.sh
 
 infra-init:
 	$(TERRAFORM_CMD) init -backend-config=backend.tfconf
@@ -55,6 +69,10 @@ help:
 	@echo "  initdb         Bootstrap the database (runs ./initdb.sh)."
 	@echo "  down           Stop the local stack (data is kept)."
 	@echo "  clean          Stop the local stack and delete its data volume."
+	@echo "  test           Run all test suites (needs the debug stack up + initdb)."
+	@echo "  test-db        Run the pgTAP database tests."
+	@echo "  test-api       Run the HTTP tests against PostgREST."
+	@echo "  test-e2e       Run the Playwright end-to-end tests."
 	@echo "  precommit      Manually run pre-commit hooks on all files."
 	@echo "  infra-init     Initialize Terraform with backend configuration."
 	@echo "  infra          Apply infrastructure configuration using Terraform."
