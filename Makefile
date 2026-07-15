@@ -7,8 +7,10 @@ ANSIBLE_DIR = config/ansible
 # target below operates on one consistent stack definition.
 COMPOSE_FILES_DEV = docker-compose.yaml:config/docker-compose.overrides/dev.yaml
 COMPOSE_FILES_DEBUG = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/debug.yaml
+COMPOSE_FILES_TEST = $(COMPOSE_FILES_DEBUG):config/docker-compose.overrides/test.yaml
 COMPOSE_DEV = COMPOSE_FILE=$(COMPOSE_FILES_DEV) docker compose
 COMPOSE_DEBUG = COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) docker compose
+COMPOSE_TEST = COMPOSE_PROJECT_NAME=dtrack-test COMPOSE_FILE=$(COMPOSE_FILES_TEST) docker compose
 
 env ?= null
 tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),staging,$(error Invalid environment: $(env))))
@@ -41,13 +43,14 @@ debug:
 	$(COMPOSE_DEBUG) up -d --build
 
 initdb:
-	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh --dev-logging --test-template
+	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh --dev-logging
 
 down:
 	$(COMPOSE_DEBUG) down
 
 clean:
 	$(COMPOSE_DEBUG) down -v --remove-orphans
+	$(COMPOSE_TEST) down -v --remove-orphans
 
 # Test targets expect the stack up in debug mode with the database
 # bootstrapped (./initdb.sh && make debug). See docs/testing.md.
@@ -86,8 +89,9 @@ help:
 	@echo "  debug          Start the local stack in debug mode (local JWT login, no Azure)."
 	@echo "  initdb         Bootstrap the database (idempotent; ./initdb.sh --force recreates)."
 	@echo "  down           Stop the local stack (data is kept)."
-	@echo "  clean          Stop the local stack and delete its data volume."
-	@echo "  test           Run all test suites (needs the debug stack up + initdb)."
+	@echo "  clean          Stop the dev and test stacks and delete their data volumes."
+	@echo "  test           Run all test suites, each in a freshly recreated isolated"
+	@echo "                   test environment (ports 5433/3001/5175; needs only .env)."
 	@echo "  test-db        Run the pgTAP database tests."
 	@echo "  test-api       Run the HTTP tests against PostgREST."
 	@echo "  test-e2e       Run the Playwright end-to-end tests."

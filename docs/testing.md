@@ -37,30 +37,33 @@ system is the database itself.
 ### Running locally
 
 ```sh
-make setup   # once: env from templates, DB bootstrapped, debug stack up
+make env     # once: .env and keys from templates
 make test    # or test-db / test-api / test-e2e
 ```
 
 Notes:
 
-- **Tests never touch the dev/debug database.** Each runner drops all but
-  the newest 3 test databases (kept for post-mortems), then clones a fresh
-  `test_<epoch-seconds>_dtrack` from `template_dtrack` — a pristine snapshot
-  `make initdb` takes immediately after bootstrap ([tests/lib.sh](../tests/lib.sh)).
-- **DB tests** run pg_prove against the fresh clone. pgTAP and pg_prove come
+- **Tests run in a completely isolated environment** — a separate compose
+  project (`dtrack-test`) with its own postgres cluster, PostgREST and UI on
+  their own host ports (5433 / 3001 / 5175), built from the same compose
+  files as dev/debug plus [test.yaml](../config/docker-compose.overrides/test.yaml).
+  The dev/debug stack is never touched and doesn't even need to be running.
+- **Every runner recreates the environment from the ground up**: tear down
+  the previous test environment (containers + volume), bootstrap the fresh
+  cluster with the real `initdb.sh`, start the services that suite needs
+  ([tests/lib.sh](../tests/lib.sh)). Afterwards it stays up for inspection
+  until the next run — and since `make test` stops on the first failing
+  suite, the remnant is always the environment that failed.
+- **DB tests** run pg_prove inside the test cluster. pgTAP and pg_prove come
   from the postgres image's `test` build target, which the dev compose
   override selects; production builds use the `production` target and carry
   no test tooling.
-- **API and E2E runs rebind PostgREST** to their test database for the
-  duration (the UI follows, since it talks to PostgREST on :3000) and always
-  restore it to the dev database on exit, pass or fail. Expect the API to be
-  briefly unavailable to a parallel dev session while a test run is active.
-- One caveat: Postgres roles are cluster-wide, so the `api.*` personas and
-  any pm/lead grants they accumulate persist across test databases. Rows in
-  `auth.users` are per-database and always fresh; no suite asserts the
-  absence of persona role grants.
-- Suites run sequentially (one PostgREST to rebind); at the current scale
-  the whole pyramid takes well under a minute locally once images are built.
+- The test UI is its own image (`react-admin:test`) because the API base URI
+  is baked in at Vite build time; after the first build it rebuilds from
+  cache in seconds.
+- Suites run sequentially; recreating an environment costs roughly 20–30 s
+  once images are cached, and the suites themselves take well under a
+  minute combined.
 
 ## CI
 
@@ -68,11 +71,12 @@ Notes:
 push to main:
 
 - **lint** — UI type-check, eslint and prettier in check mode (no fixes),
-  pre-commit hooks (whitespace, terraform), test-case-id check.
-- **stack-tests** — builds and boots the real compose stack (the same images
-  production runs) with template env values and the debug JWT secret, then
-  runs the pyramid bottom-up: pgTAP → API → E2E. On failure it uploads the
-  Playwright report/traces and full compose logs as artifacts.
+  pre-commit hooks (whitespace, shellcheck, terraform), test-case-id check.
+- **stack-tests** — runs the pyramid bottom-up (pgTAP → API → E2E), each
+  suite recreating the isolated test environment exactly as it does locally;
+  the dev stack is not started in CI at all. On failure it uploads the
+  Playwright report/traces and the test environment's compose logs as
+  artifacts.
 
 ## Known defects pinned by expected-fail tests
 
@@ -136,18 +140,19 @@ Decisions made building this, with the trade-offs considered:
    exact codes (`42501`, `23514`) where they are the contract. List/count
    assertions filter by run-scoped names so suites tolerate existing data.
 8. **Sequential execution** (vitest `fileParallelism: false`, Playwright
-   `workers: 1`) because all suites share one PostgREST instance and one
-   test database per run. Parallelizing would need per-worker databases and
-   PostgREST instances — not worth it at this size.
-9. **Per-run test databases instead of data cleanup** (revised 2026-07-15;
-   originally the runners deleted residue by reserved name prefixes). Each
-   run clones Postgres's native template mechanism: `make initdb` snapshots
-   the pristine bootstrap as `template_dtrack`, runners clone it in ~a
-   second, and pruning keeps the 3 newest clones for inspection. The dev
-   database is never written to by tests, and the prefix-matching cleanup
-   SQL is gone. Trade-off: PostgREST must be rebound (a container recreate)
-   per API/E2E run, and cluster-wide role grants still leak across runs —
-   both documented above.
+   `workers: 1`) because each run drives one shared test environment.
+   Parallelizing would need per-worker environments — not worth it at this
+   size.
+9. **A fully isolated test environment, recreated per runner invocation**
+   (Dean's call, 2026-07-16; two earlier iterations — prefix-based data
+   cleanup, then template-cloned databases inside the shared dev cluster —
+   were superseded). A separate compose project gives tests their own
+   cluster, PostgREST and UI on their own ports, so the bootstrap runs
+   verbatim (no cluster-wide role collisions, no PostgREST rebinding, no
+   grant leakage between dev and test) and teardown is `docker compose down
+   --volumes`. Trade-off: ~20–30 s recreate per suite and a second set of
+   images on disk; accepted for the simpler mental model — dev and test
+   share nothing.
 
 Known gaps, on purpose: no load/performance tests, no visual regression, no
 mutation testing, no property-based RLS fuzzing (a future TC-SEC series),

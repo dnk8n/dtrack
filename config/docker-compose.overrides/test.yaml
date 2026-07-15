@@ -1,0 +1,38 @@
+# Isolated test environment. Used together with dev.yaml and debug.yaml under
+# a separate compose project (see tests/lib.sh), so the test stack matches
+# dev/debug exactly — fresh cluster, same bootstrap — while its own containers,
+# volume and host ports let it run alongside the dev stack without contact.
+#
+# `!override` replaces the port lists merged from dev.yaml instead of
+# appending to them (which would collide with the dev stack's ports).
+services:
+  postgres:
+    ports: !override
+      - published: 5433
+        target: 5432
+
+  postgrest:
+    environment:
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3001
+    ports: !override
+      - published: 3001
+        target: 3000
+
+  react-admin:
+    # A separate tag: the API base URI is baked in at build time, so the test
+    # UI is its own image pointing at the test PostgREST port.
+    image: react-admin:test
+    build:
+      args:
+        VITE_APP_BASE_URI: http://localhost:5175
+        VITE_API_BASE_URI: http://localhost:3001
+    ports: !override
+      - published: 5175
+        target: 80
+
+  swagger:
+    # Not started by the test runners; remapped anyway so a manual `up` of
+    # the whole test project can't collide with the dev stack.
+    ports: !override
+      - published: 8081
+        target: 8080

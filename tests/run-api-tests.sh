@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# Run the HTTP tests against PostgREST bound to a fresh test database
-# (see tests/lib.sh for the test-database lifecycle). PostgREST is pointed
-# back at the dev/debug database when the run ends, pass or fail.
-# Prerequisites: stack up in debug mode with the database bootstrapped
-# (make setup).
+# Run the HTTP tests against the isolated test environment (see tests/lib.sh):
+# a fresh cluster and PostgREST on :3001, recreated for every run and left
+# up afterwards for inspection. The dev/debug stack is never touched.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 
-create_test_db
-trap restore_postgrest EXIT
-point_postgrest_at "${TEST_DB}"
+recreate_test_env postgrest
+wait_for_url "${DTRACK_TEST_API_URI}/"
 
 cd "${TESTS_DIR}"
 [ -d node_modules ] || npm ci

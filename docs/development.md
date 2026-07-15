@@ -59,14 +59,11 @@ exists it is a no-op. `./initdb.sh --force` recreates everything from scratch
 
 Use `make initdb` rather than calling `./initdb.sh` directly: the make target
 exports the dev/debug compose file set, so postgres keeps its published port
-and dev mounts, and passes two dev-only flags — `--dev-logging`, which turns
-on verbose statement logging (`log_statement = 'all'`), and
-`--test-template`, which snapshots the pristine bootstrap as
-`template_dtrack` for the test runners to clone (see
-[testing.md](testing.md)). Called bare (as on deployed servers) the script
-falls back to default compose file resolution and leaves both off —
-statement logging writes sensitive data to the server log and is strictly a
-development convenience.
+and dev mounts, and passes `--dev-logging`, which turns on verbose statement
+logging (`log_statement = 'all'`). Called bare (as on deployed servers) the
+script falls back to default compose file resolution and leaves logging at
+Postgres defaults — statement logging writes sensitive data to the server log
+and is strictly a development convenience.
 
 | URL | What |
 | --- | --- |
@@ -93,8 +90,10 @@ docker compose up -d --build react-admin   # rebuild just the UI image
 Handy inspection queries (activity, audit log, durations) live in
 [dtrack/dev/queries/useful.sql](../dtrack/dev/queries/useful.sql).
 
-With the debug stack up and the database bootstrapped, `make test` runs the
-full test pyramid (or `test-db` / `test-api` / `test-e2e` individually) — see
+`make test` runs the full test pyramid (or `test-db` / `test-api` /
+`test-e2e` individually). Tests live in their own compose project with their
+own postgres/PostgREST/UI on ports 5433/3001/5175, recreated from scratch per
+run — the dev stack is untouched and doesn't even need to be running. See
 [testing.md](testing.md).
 
 ### Calling the API directly
