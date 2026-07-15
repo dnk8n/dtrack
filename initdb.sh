@@ -6,6 +6,8 @@
 #
 # Idempotent: if the application database already exists this is a no-op.
 # Pass --force to remove the containers and data volume and start over.
+# Pass --dev-logging (development only — used by `make initdb`) to enable
+# verbose statement logging; deployed servers must run without it.
 #
 # Respects COMPOSE_FILE, so `make initdb` targets the same compose
 # configuration as `make debug`. Called bare (as on deployed servers) it uses
@@ -14,11 +16,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 force=false
+dev_logging=false
 for arg in "$@"; do
     case "$arg" in
         --force) force=true ;;
+        --dev-logging) dev_logging=true ;;
         *)
-            echo "usage: $0 [--force]" >&2
+            echo "usage: $0 [--force] [--dev-logging]" >&2
             exit 2
             ;;
     esac
@@ -89,15 +93,19 @@ for dir in dtrack/db/sql/*; do
     execute_files "$dir"
 done
 
-# Verbose statement logging — useful in development and when inspecting a
-# server. Guarded so a re-bootstrap never appends duplicate lines.
-for setting in "log_statement = 'all'" "log_min_messages = 'notice'"; do
-    docker compose exec -T postgres bash -c \
-        "grep -qxF \"${setting}\" /var/lib/postgresql/data/postgresql.conf ||
-         echo \"${setting}\" >> /var/lib/postgresql/data/postgresql.conf"
-done
+# Verbose logging for development only (make initdb passes --dev-logging):
+# log_statement = 'all' writes every statement, including sensitive data, to
+# the server log — never enable it on a deployed instance. Guarded so a
+# re-bootstrap never appends duplicate lines.
+if [[ "$dev_logging" == true ]]; then
+    for setting in "log_statement = 'all'" "log_min_messages = 'notice'"; do
+        docker compose exec -T postgres bash -c \
+            "grep -qxF \"${setting}\" /var/lib/postgresql/data/postgresql.conf ||
+             echo \"${setting}\" >> /var/lib/postgresql/data/postgresql.conf"
+    done
+    echo "--> Restarting postgres to apply dev logging configuration"
+    docker compose restart postgres
+    wait_for_postgres
+fi
 
-echo "--> Restarting postgres to apply configuration"
-docker compose restart postgres
-wait_for_postgres
 echo "Database '${POSTGRES_DB_APP}' bootstrapped."
