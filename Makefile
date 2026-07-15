@@ -10,7 +10,6 @@ COMPOSE_FILES_DEBUG = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/debug
 COMPOSE_FILES_TEST = $(COMPOSE_FILES_DEBUG):config/docker-compose.overrides/test.yaml
 COMPOSE_DEV = COMPOSE_FILE=$(COMPOSE_FILES_DEV) docker compose
 COMPOSE_DEBUG = COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) docker compose
-COMPOSE_TEST = COMPOSE_PROJECT_NAME=dtrack-test COMPOSE_FILE=$(COMPOSE_FILES_TEST) docker compose
 
 env ?= null
 tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),staging,$(error Invalid environment: $(env))))
@@ -50,11 +49,16 @@ down:
 
 clean:
 	$(COMPOSE_DEBUG) down -v --remove-orphans
-	$(COMPOSE_TEST) down -v --remove-orphans
+	for suite in db api e2e; do \
+		COMPOSE_PROJECT_NAME=dtrack-test-$$suite \
+		COMPOSE_FILE=$(COMPOSE_FILES_TEST) \
+		docker compose down -v --remove-orphans; \
+	done
 
-# Test targets expect the stack up in debug mode with the database
-# bootstrapped (./initdb.sh && make debug). See docs/testing.md.
-test: test-db test-api test-e2e
+# Each suite provisions its own isolated environment (needs only `make env`
+# beforehand); `make test` runs all three in parallel. See docs/testing.md.
+test:
+	./tests/run-all.sh
 
 test-db:
 	./tests/run-db-tests.sh
@@ -64,6 +68,11 @@ test-api:
 
 test-e2e:
 	./tests/run-e2e-tests.sh
+
+# Revive a suite's stopped test environment (data intact in its volume),
+# e.g. `make test-up-api`.
+test-up-%:
+	TEST_SUITE=$* ./tests/test-env.sh
 
 infra-init:
 	$(TERRAFORM_CMD) init -backend-config=backend.tfconf
@@ -90,11 +99,13 @@ help:
 	@echo "  initdb         Bootstrap the database (idempotent; ./initdb.sh --force recreates)."
 	@echo "  down           Stop the local stack (data is kept)."
 	@echo "  clean          Stop the dev and test stacks and delete their data volumes."
-	@echo "  test           Run all test suites, each in a freshly recreated isolated"
-	@echo "                   test environment (ports 5433/3001/5175; needs only .env)."
+	@echo "  test           Run all test suites in parallel, each in its own freshly"
+	@echo "                   recreated isolated environment (needs only .env)."
 	@echo "  test-db        Run the pgTAP database tests."
 	@echo "  test-api       Run the HTTP tests against PostgREST."
 	@echo "  test-e2e       Run the Playwright end-to-end tests."
+	@echo "  test-up-<s>    Revive suite <s>'s stopped test environment for inspection"
+	@echo "                   (db|api|e2e); its last run's data is still in the volume."
 	@echo "  precommit      Manually run pre-commit hooks on all files."
 	@echo "  infra-init     Initialize Terraform with backend configuration."
 	@echo "  infra          Apply infrastructure configuration using Terraform."

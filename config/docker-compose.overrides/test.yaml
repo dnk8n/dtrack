@@ -1,38 +1,47 @@
-# Isolated test environment. Used together with dev.yaml and debug.yaml under
-# a separate compose project (see tests/lib.sh), so the test stack matches
-# dev/debug exactly — fresh cluster, same bootstrap — while its own containers,
-# volume and host ports let it run alongside the dev stack without contact.
+# Isolated test environments. Used together with dev.yaml and debug.yaml
+# under a separate compose project per suite (see tests/lib.sh), so each test
+# stack matches dev/debug exactly — fresh cluster, same bootstrap — while its
+# own containers, volume and host ports let all suites run in parallel,
+# alongside the dev stack, without contact.
+#
+# Ports are interpolated per suite (tests/lib.sh):
+#   suite   project          postgres  api   ui
+#   db      dtrack-test-db   5433      3003  5177
+#   api     dtrack-test-api  5434      3002  5176
+#   e2e     dtrack-test-e2e  5435      3001  5175
+# (e2e keeps 3001/5175: the UI bakes its API base at build time and the
+# nginx CSP allowlists it.)
 #
 # `!override` replaces the port lists merged from dev.yaml instead of
 # appending to them (which would collide with the dev stack's ports).
 services:
   postgres:
     ports: !override
-      - published: 5433
+      - published: ${TEST_PG_PORT:-5433}
         target: 5432
 
   postgrest:
     environment:
-      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3001
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:${TEST_API_PORT:-3001}
     ports: !override
-      - published: 3001
+      - published: ${TEST_API_PORT:-3001}
         target: 3000
 
   react-admin:
     # A separate tag: the API base URI is baked in at build time, so the test
-    # UI is its own image pointing at the test PostgREST port.
+    # UI is its own image pointing at the e2e suite's PostgREST port.
     image: react-admin:test
     build:
       args:
-        VITE_APP_BASE_URI: http://localhost:5175
-        VITE_API_BASE_URI: http://localhost:3001
+        VITE_APP_BASE_URI: http://localhost:${TEST_UI_PORT:-5175}
+        VITE_API_BASE_URI: http://localhost:${TEST_API_PORT:-3001}
     ports: !override
-      - published: 5175
+      - published: ${TEST_UI_PORT:-5175}
         target: 80
 
   swagger:
     # Not started by the test runners; remapped anyway so a manual `up` of
-    # the whole test project can't collide with the dev stack.
+    # a whole test project can't collide with the dev stack.
     ports: !override
-      - published: 8081
+      - published: ${TEST_SWAGGER_PORT:-8081}
         target: 8080

@@ -38,32 +38,43 @@ system is the database itself.
 
 ```sh
 make env     # once: .env and keys from templates
-make test    # or test-db / test-api / test-e2e
+make test    # all three suites in parallel; or test-db / test-api / test-e2e
 ```
 
 Notes:
 
-- **Tests run in a completely isolated environment** — a separate compose
-  project (`dtrack-test`) with its own postgres cluster, PostgREST and UI on
-  their own host ports (5433 / 3001 / 5175), built from the same compose
-  files as dev/debug plus [test.yaml](../config/docker-compose.overrides/test.yaml).
-  The dev/debug stack is never touched and doesn't even need to be running.
-- **Every runner recreates the environment from the ground up**: tear down
-  the previous test environment (containers + volume), bootstrap the fresh
-  cluster with the real `initdb.sh`, start the services that suite needs
-  ([tests/lib.sh](../tests/lib.sh)). Afterwards it stays up for inspection
-  until the next run — and since `make test` stops on the first failing
-  suite, the remnant is always the environment that failed.
+- **Each suite runs in its own completely isolated environment** — one
+  compose project per suite with its own postgres cluster, PostgREST and UI
+  on its own host ports, built from the same compose files as dev/debug plus
+  [test.yaml](../config/docker-compose.overrides/test.yaml):
+
+  | suite | project | postgres | API | UI |
+  | --- | --- | --- | --- | --- |
+  | db | `dtrack-test-db` | 5433 | — | — |
+  | api | `dtrack-test-api` | 5434 | 3002 | — |
+  | e2e | `dtrack-test-e2e` | 5435 | 3001 | 5175 |
+
+  That's why `make test` ([tests/run-all.sh](../tests/run-all.sh)) can run
+  them in parallel, with per-suite output grouped at the end (and captured
+  under `tests/logs/`). The dev/debug stack is never touched and doesn't
+  need to be running.
+- **Every runner recreates its environment from the ground up** — tear down
+  the suite's previous environment (containers + volume), bootstrap the
+  fresh cluster with the real `initdb.sh`, start the services that suite
+  needs ([tests/lib.sh](../tests/lib.sh)). When the run ends the containers
+  are **stopped, not removed**: `make test-up-<suite>` brings the
+  environment back with the run's data still in its volume, for pass or
+  failure post-mortems, until the suite's next run replaces it.
 - **DB tests** run pg_prove inside the test cluster. pgTAP and pg_prove come
   from the postgres image's `test` build target, which the dev compose
   override selects; production builds use the `production` target and carry
   no test tooling.
 - The test UI is its own image (`react-admin:test`) because the API base URI
-  is baked in at Vite build time; after the first build it rebuilds from
-  cache in seconds.
-- Suites run sequentially; recreating an environment costs roughly 20–30 s
-  once images are cached, and the suites themselves take well under a
-  minute combined.
+  is baked in at Vite build time — hence the e2e suite owning port 3001,
+  which the baked URI and the nginx CSP reference. It rebuilds from cache in
+  seconds after the first build.
+- A full parallel run costs about a minute once images are cached
+  (environment recreation ~20–30 s per suite, overlapped).
 
 ## CI
 
@@ -72,10 +83,10 @@ push to main:
 
 - **lint** — UI type-check, eslint and prettier in check mode (no fixes),
   pre-commit hooks (whitespace, shellcheck, terraform), test-case-id check.
-- **stack-tests** — runs the pyramid bottom-up (pgTAP → API → E2E), each
-  suite recreating the isolated test environment exactly as it does locally;
-  the dev stack is not started in CI at all. On failure it uploads the
-  Playwright report/traces and the test environment's compose logs as
+- **stack-tests** — `tests/run-all.sh`, exactly as locally: all three suites
+  in parallel, each recreating its isolated environment; the dev stack is
+  not started in CI at all. On failure it uploads the per-suite logs, the
+  Playwright report/traces, and each test environment's container logs as
   artifacts.
 
 ## Known defects pinned by expected-fail tests
@@ -139,20 +150,24 @@ Decisions made building this, with the trade-offs considered:
    "status ≥ 400" where PostgREST's exact code may change across upgrades,
    exact codes (`42501`, `23514`) where they are the contract. List/count
    assertions filter by run-scoped names so suites tolerate existing data.
-8. **Sequential execution** (vitest `fileParallelism: false`, Playwright
-   `workers: 1`) because each run drives one shared test environment.
-   Parallelizing would need per-worker environments — not worth it at this
-   size.
-9. **A fully isolated test environment, recreated per runner invocation**
-   (Dean's call, 2026-07-16; two earlier iterations — prefix-based data
-   cleanup, then template-cloned databases inside the shared dev cluster —
-   were superseded). A separate compose project gives tests their own
-   cluster, PostgREST and UI on their own ports, so the bootstrap runs
-   verbatim (no cluster-wide role collisions, no PostgREST rebinding, no
-   grant leakage between dev and test) and teardown is `docker compose down
-   --volumes`. Trade-off: ~20–30 s recreate per suite and a second set of
-   images on disk; accepted for the simpler mental model — dev and test
-   share nothing.
+8. **Parallel across suites, sequential within a suite.** Each suite owns an
+   environment, so `make test` runs the three suites concurrently; *inside*
+   a suite, tests still run sequentially (vitest `fileParallelism: false`,
+   Playwright `workers: 1`) because they share that suite's database.
+   Finer-grained parallelism would need per-worker environments — not worth
+   it at this size.
+9. **Fully isolated per-suite test environments, recreated per runner
+   invocation and stopped afterwards** (Dean's design, 2026-07-16; two
+   earlier iterations — prefix-based data cleanup, then template-cloned
+   databases inside the shared dev cluster — were superseded). A compose
+   project per suite gives each its own cluster, PostgREST and UI on its own
+   ports, so the bootstrap runs verbatim (no cluster-wide role collisions,
+   no PostgREST rebinding, no grant leakage), suites parallelize trivially,
+   and teardown is `docker compose down --volumes`. Ending a run with `stop`
+   keeps every run's final state retrievable (`make test-up-<suite>`) at
+   zero idle cost. Trade-off: ~20–30 s recreate per suite and extra images
+   on disk; accepted for the simpler mental model — dev and test share
+   nothing, suites share nothing.
 
 Known gaps, on purpose: no load/performance tests, no visual regression, no
 mutation testing, no property-based RLS fuzzing (a future TC-SEC series),

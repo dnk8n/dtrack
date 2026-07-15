@@ -90,11 +90,11 @@ docker compose up -d --build react-admin   # rebuild just the UI image
 Handy inspection queries (activity, audit log, durations) live in
 [dtrack/dev/queries/useful.sql](../dtrack/dev/queries/useful.sql).
 
-`make test` runs the full test pyramid (or `test-db` / `test-api` /
-`test-e2e` individually). Tests live in their own compose project with their
-own postgres/PostgREST/UI on ports 5433/3001/5175, recreated from scratch per
-run — the dev stack is untouched and doesn't even need to be running. See
-[testing.md](testing.md).
+`make test` runs the full test pyramid — all three suites in parallel, each
+in its own compose project with its own postgres/PostgREST/UI ports,
+recreated from scratch per run and stopped (state kept) afterwards;
+`make test-up-<suite>` revives one for inspection. The dev stack is untouched
+and doesn't even need to be running. See [testing.md](testing.md).
 
 ### Calling the API directly
 
