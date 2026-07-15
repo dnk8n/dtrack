@@ -62,9 +62,10 @@ Notes:
   the suite's previous environment (containers + volume), bootstrap the
   fresh cluster with the real `initdb.sh`, start the services that suite
   needs ([tests/lib.sh](../tests/lib.sh)). When the run ends the containers
-  are **stopped, not removed**: `make test-up-<suite>` brings the
-  environment back with the run's data still in its volume, for pass or
-  failure post-mortems, until the suite's next run replaces it.
+  are **stopped, not removed**: `make test-inspect-<suite>` brings the
+  environment back for post-mortem or debugging — it never reruns tests,
+  the run's data is still in its volume — until the suite's next run
+  clobbers and replaces it.
 - **DB tests** run pg_prove inside the test cluster. pgTAP and pg_prove come
   from the postgres image's `test` build target, which the dev compose
   override selects; production builds use the `production` target and carry
@@ -164,10 +165,10 @@ Decisions made building this, with the trade-offs considered:
    ports, so the bootstrap runs verbatim (no cluster-wide role collisions,
    no PostgREST rebinding, no grant leakage), suites parallelize trivially,
    and teardown is `docker compose down --volumes`. Ending a run with `stop`
-   keeps every run's final state retrievable (`make test-up-<suite>`) at
-   zero idle cost. Trade-off: ~20–30 s recreate per suite and extra images
-   on disk; accepted for the simpler mental model — dev and test share
-   nothing, suites share nothing.
+   keeps every run's final state retrievable (`make test-inspect-<suite>`)
+   at zero idle cost. Trade-off: ~20–30 s recreate per suite and extra
+   images on disk; accepted for the simpler mental model — dev and test
+   share nothing, suites share nothing.
 
 Known gaps, on purpose: no load/performance tests, no visual regression, no
 mutation testing, no property-based RLS fuzzing (a future TC-SEC series),

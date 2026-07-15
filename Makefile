@@ -69,10 +69,10 @@ test-api:
 test-e2e:
 	./tests/run-e2e-tests.sh
 
-# Revive a suite's stopped test environment (data intact in its volume),
-# e.g. `make test-up-api`.
-test-up-%:
-	TEST_SUITE=$* ./tests/test-env.sh
+# Revive a suite's stopped test environment for post-mortem/debugging (data
+# intact in its volume; never reruns tests), e.g. `make test-inspect-api`.
+test-inspect-%:
+	TEST_SUITE=$* ./tests/inspect-env.sh
 
 infra-init:
 	$(TERRAFORM_CMD) init -backend-config=backend.tfconf
@@ -104,8 +104,9 @@ help:
 	@echo "  test-db        Run the pgTAP database tests."
 	@echo "  test-api       Run the HTTP tests against PostgREST."
 	@echo "  test-e2e       Run the Playwright end-to-end tests."
-	@echo "  test-up-<s>    Revive suite <s>'s stopped test environment for inspection"
-	@echo "                   (db|api|e2e); its last run's data is still in the volume."
+	@echo "  test-inspect-<s>  Revive suite <s>'s stopped test environment (db|api|e2e)"
+	@echo "                   for post-mortem/debugging; never reruns tests, the last"
+	@echo "                   run's data is still in the volume."
 	@echo "  precommit      Manually run pre-commit hooks on all files."
 	@echo "  infra-init     Initialize Terraform with backend configuration."
 	@echo "  infra          Apply infrastructure configuration using Terraform."

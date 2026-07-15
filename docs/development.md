@@ -93,8 +93,9 @@ Handy inspection queries (activity, audit log, durations) live in
 `make test` runs the full test pyramid — all three suites in parallel, each
 in its own compose project with its own postgres/PostgREST/UI ports,
 recreated from scratch per run and stopped (state kept) afterwards;
-`make test-up-<suite>` revives one for inspection. The dev stack is untouched
-and doesn't even need to be running. See [testing.md](testing.md).
+`make test-inspect-<suite>` revives one for post-mortem/debugging without
+rerunning anything. The dev stack is untouched and doesn't even need to be
+running. See [testing.md](testing.md).
 
 ### Calling the API directly
 

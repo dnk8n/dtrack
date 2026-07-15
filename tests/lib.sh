@@ -9,8 +9,8 @@
 # parallel without contact, next to the dev stack. Every runner invocation
 # tears its previous environment down and recreates it from the ground up
 # with the real bootstrap (initdb.sh). When a run ends the containers are
-# stopped, not removed: `make test-up-<suite>` brings the environment back
-# with the run's data still in its volume.
+# stopped, not removed: `make test-inspect-<suite>` brings the environment
+# back for post-mortem/debugging, with the run's data still in its volume.
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${TESTS_DIR}/.." && pwd)"
@@ -85,7 +85,7 @@ recreate_test_env() {
 # Install as an EXIT trap: runs on success and failure, preserving the code.
 stop_test_env() {
     local rc=$?
-    echo "--> Stopping ${TEST_SUITE} test environment (state kept; revive with: make test-up-${TEST_SUITE})"
+    echo "--> Stopping ${TEST_SUITE} test environment (state kept; inspect with: make test-inspect-${TEST_SUITE})"
     (cd "${REPO_ROOT}" && docker compose stop >/dev/null 2>&1) || true
     exit "${rc}"
 }
