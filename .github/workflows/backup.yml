@@ -58,7 +58,7 @@ jobs:
           echo "artifact_name=$artifact_name" >> $GITHUB_OUTPUT
 
       - name: Upload backup artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.determine-backup-settings.outputs.artifact_name }}
           path: /tmp/backup/
@@ -76,7 +76,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.backup.outputs.artifact_name }}
           path: /tmp/backup
