@@ -31,7 +31,7 @@ services:
       PGRST_JWT_SECRET: "@/config/jwt-secret"
       PGRST_OPENAPI_MODE: ignore-privileges
       PGRST_OPENAPI_SECURITY_ACTIVE: "true"
-    image: postgrest/postgrest:v10.1.2
+    image: postgrest/postgrest:v14.15
     networks:
       net: {}
     restart: unless-stopped
