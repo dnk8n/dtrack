@@ -20,7 +20,7 @@ application server.
 
 | Service | Image | Pinned | Latest (July 2026) | Notes |
 | --- | --- | --- | --- | --- |
-| `postgres` | custom, from `postgres:18` | PG 18 | current (July 2026) | Adds cyanaudit (compiled from source), plpython3u + `guardpost` (JWT validation), perl deps for cyanaudit tools. [Dockerfile](../config/dockerfiles/postgres/Dockerfile) |
+| `postgres` | custom, from `postgres:15` | PG 15 | PG 18 (15 supported until Nov 2027) | Adds cyanaudit (compiled from source), plpython3u + `guardpost` (JWT validation), perl deps for cyanaudit tools. [Dockerfile](../config/dockerfiles/postgres/Dockerfile) |
 | `postgrest` | `postgrest/postgrest` | v14.15 | current (July 2026) | Serves schema `api`, anon role `anon`, pre-request `pre.request` |
 | `react-admin` | custom, node 24 (LTS) build → nginx | react-admin 4.9, Vite 4, TS 4.6 | react-admin 5.15, Vite 7, TS 5.x (majors need source migration — frozen) | Built with `VITE_*` build args; served as static SPA. [Dockerfile](../config/dockerfiles/react-admin/Dockerfile) |
 | `swagger` | `swaggerapi/swagger-ui` | v5.32.8 | current (July 2026) | Reads PostgREST's OpenAPI output |

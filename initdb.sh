@@ -102,11 +102,14 @@ done
 
 # Verbose logging for development only (make initdb passes --dev-logging):
 # log_statement = 'all' writes every statement, including sensitive data, to
-# the server log — never enable it on a deployed instance. ALTER SYSTEM is
-# idempotent and independent of the image's data-directory layout.
+# the server log — never enable it on a deployed instance. Guarded so a
+# re-bootstrap never appends duplicate lines.
 if [[ "$dev_logging" == true ]]; then
-    psql_admin -c "ALTER SYSTEM SET log_statement = 'all'"
-    psql_admin -c "ALTER SYSTEM SET log_min_messages = 'notice'"
+    for setting in "log_statement = 'all'" "log_min_messages = 'notice'"; do
+        docker compose exec -T postgres bash -c \
+            "grep -qxF \"${setting}\" /var/lib/postgresql/data/postgresql.conf ||
+             echo \"${setting}\" >> /var/lib/postgresql/data/postgresql.conf"
+    done
     echo "--> Restarting postgres to apply dev logging configuration"
     docker compose restart postgres
     wait_for_postgres
