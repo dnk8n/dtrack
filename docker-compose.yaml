@@ -54,7 +54,7 @@ services:
   swagger:
     depends_on:
       - postgrest
-    image: swaggerapi/swagger-ui:v4.18.1
+    image: swaggerapi/swagger-ui:v5.32.8
     networks:
       net: {}
     restart: unless-stopped
