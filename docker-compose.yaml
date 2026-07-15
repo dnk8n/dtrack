@@ -1,10 +1,11 @@
-version: "3"
-
 services:
   postgres:
     build:
       context: ./config/dockerfiles/postgres
       dockerfile: ./Dockerfile
+      # The Dockerfile's last stage adds test tooling; production must be
+      # selected explicitly (the dev override switches to the test stage).
+      target: production
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}

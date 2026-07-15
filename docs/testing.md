@@ -37,21 +37,23 @@ system is the database itself.
 ### Running locally
 
 ```sh
-./initdb.sh && make debug   # once: stack up in debug mode, DB bootstrapped
-make test                   # or test-db / test-api / test-e2e
+make setup   # once: env from templates, DB bootstrapped, debug stack up
+make test    # or test-db / test-api / test-e2e
 ```
 
 Notes:
 
 - **DB tests** leave no trace: each file is one transaction that rolls back.
-  pgTAP itself is installed into the *running container* at test time (from
-  the PGDG apt repo already configured in the postgres image), so the
-  production image stays untouched.
-- **API and E2E tests** write real rows. Personas (`api.*@hellodnk8n…`) are
-  created idempotently through the API itself; projects/teams/entries get
-  run-unique names (`api … <runId>` / `E2E … <runId>`). On an ephemeral CI
-  database this is invisible; on a long-lived local dev database residue
-  accumulates — `make clean && ./initdb.sh && make debug` resets.
+  pgTAP and pg_prove come from the postgres image's `test` build target,
+  which the dev compose override selects; production builds use the
+  `production` target and carry no test tooling.
+- **API and E2E tests** write real rows under reserved name prefixes
+  (`api …`, `E2E …`). Each runner first executes
+  [tests/cleanup-test-data.sh](../tests/cleanup-test-data.sh), which deletes
+  residue from previous runs, so repeated runs are idempotent and a
+  long-lived dev database stays tidy. Personas (`api.*@hellodnk8n…`) are
+  created idempotently through the API and kept. Don't use the reserved
+  prefixes for real data.
 - Suites run sequentially (one shared database); at the current scale the
   whole pyramid takes well under a minute locally once images are built.
 
@@ -89,11 +91,13 @@ impossible by design — `api.onboard` validates real Azure tokens in-database
 
 Decisions made building this, with the trade-offs considered:
 
-1. **pgTAP installed at test time, not baked into the image.** Keeps the
-   production Dockerfile untouched (a hard constraint) at the cost of a
-   ~15 s `apt-get install` on first run per container and a network
-   dependency. *Revisit*: once image changes are allowed, add a test-stage
-   image (or a compose `test` override) so offline runs work.
+1. **pgTAP baked into a `test` image stage** (revised 2026-07-15; originally
+   apt-installed into the running container while image changes were out of
+   scope). The Dockerfile's final `test` stage layers pgTAP/pg_prove on top
+   of `production`; the base compose file pins `target: production` so
+   deploys are byte-identical to before, and the dev override selects
+   `target: test`. Test runs are now offline-capable and deterministic, and
+   the container is fully ephemeral — nothing is installed at runtime.
 2. **Markdown catalog over a test-management system.** Kiwi TCMS/TestLink
    style tools add a server, accounts and drift risk for a one-team repo;
    markdown + a CI grep gives ids, review-in-PR and zero infrastructure.

@@ -16,16 +16,16 @@ colima start --cpu 4 --memory 8
 ## One-time setup
 
 ```sh
-cp .env.tpl .env
-mkdir -p keys && printf 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' > keys/jwt-secret
+make env    # .env from .env.tpl, keys/jwt-secret with the debug secret
 ```
 
-The `.env` template's dummy values work as-is for local debug mode. The
-`keys/jwt-secret` file must exist **as a file** before the first
-`docker compose up` — if compose creates the bind-mount path for you, it will
-be a directory and PostgREST will fail to read it (delete it and recreate as a
-file). In debug mode its content is unused (the debug compose override injects
-the shared HS256 secret), but the mount must still resolve.
+`make env` never overwrites existing files. The `.env` template's dummy
+values work as-is for local debug mode. The `keys/jwt-secret` file must exist
+**as a file** before the first `docker compose up` — if compose creates the
+bind-mount path for you, it will be a directory and PostgREST will fail to
+read it (delete it and recreate as a file). In debug mode its content is
+unused (the debug compose override injects the shared HS256 secret), but the
+mount must still resolve.
 
 ## Two modes
 
@@ -44,21 +44,23 @@ cache different state and will confuse each other.
 ## Start, bootstrap, use
 
 ```sh
-./initdb.sh    # first time, or after `make clean`
-make debug     # or: make dev
+make setup     # = make env + make initdb + make debug
 ```
 
-`initdb.sh` builds and starts postgres if needed, waits for readiness, then
-executes all of `dtrack/db/sql/` in order (see
-[architecture.md](architecture.md#database-bootstrap-initdbsh)). Run it once
-per fresh data volume. It is not idempotent — on an already-initialized
-database many statements will error; for a clean slate use `make clean` first
-(this **deletes the local database volume**).
+Or step by step: `make initdb` then `make debug` (or `make dev`).
 
-Bootstrap before `make debug`, or re-run `make debug` afterwards: `initdb.sh`
-invokes plain `docker compose`, which recreates the postgres container
-*without* the dev override (no published 5432 port) — running `make debug`
-last leaves everything in the intended dev configuration.
+`make initdb` builds and starts postgres if needed, waits for readiness, then
+executes all of `dtrack/db/sql/` in order (see
+[architecture.md](architecture.md#database-bootstrap-initdbsh)), stopping on
+the first SQL error. It is idempotent: if the application database already
+exists it is a no-op. `./initdb.sh --force` recreates everything from scratch
+(this **deletes the local database volume**), as does `make clean` followed by
+`make setup`.
+
+Use `make initdb` rather than calling `./initdb.sh` directly: the make target
+exports the dev/debug compose file set, so postgres keeps its published port
+and dev mounts. Called bare (as on deployed servers) the script falls back to
+default compose file resolution.
 
 | URL | What |
 | --- | --- |

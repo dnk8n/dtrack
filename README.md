@@ -13,10 +13,7 @@ Time tracking for teams, built SQL-first: the database **is** the application.
 Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`), and this repo cloned.
 
 ```sh
-cp .env.tpl .env                       # dummy credentials are fine locally
-mkdir -p keys && printf 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' > keys/jwt-secret
-./initdb.sh                            # build + start postgres, bootstrap the database
-make debug                             # start the full stack in debug mode
+make setup    # .env + keys from templates, bootstrap the database, start the stack
 ```
 
 Then log in at <http://localhost:5174> as `Dummy.User@example.com` (any password field shown is ignored — debug mode signs a local JWT). The API is at <http://localhost:3000>, Swagger UI at <http://localhost:8080>.

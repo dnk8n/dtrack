@@ -2,21 +2,37 @@ TERRAFORM_CMD = terraform
 ANSIBLE_CMD = ansible-playbook
 ANSIBLE_DIR = config/ansible
 
-COMPOSE_DEV = docker compose -f docker-compose.yaml \
-	-f config/docker-compose.overrides/dev.yaml
-COMPOSE_DEBUG = $(COMPOSE_DEV) \
-	-f config/docker-compose.overrides/debug.yaml
+# Compose file sets for the local stack. COMPOSE_FILE (colon-separated) is
+# docker compose's native mechanism, and initdb.sh honours it too, so every
+# target below operates on one consistent stack definition.
+COMPOSE_FILES_DEV = docker-compose.yaml:config/docker-compose.overrides/dev.yaml
+COMPOSE_FILES_DEBUG = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/debug.yaml
+COMPOSE_DEV = COMPOSE_FILE=$(COMPOSE_FILES_DEV) docker compose
+COMPOSE_DEBUG = COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) docker compose
 
 env ?= null
 tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),staging,$(error Invalid environment: $(env))))
 play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
-.PHONY: precommit infra infra-destroy play help dev debug initdb down clean \
-	test test-db test-api test-e2e
+.PHONY: precommit infra infra-destroy play help env setup dev debug initdb \
+	down clean test test-db test-api test-e2e
 
 precommit:
 	pre-commit run --all-files
+
+# Create local configuration from templates. Guarded: never overwrites
+# existing files, so it is safe on dev machines and deployed servers alike.
+env:
+	@test -f .env || { cp .env.tpl .env && echo "Created .env from .env.tpl"; }
+	@mkdir -p keys
+	@test -f keys/jwt-secret || printf 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' > keys/jwt-secret
+
+# From nothing to a running debug-mode stack with a bootstrapped database.
+setup:
+	$(MAKE) env
+	$(MAKE) initdb
+	$(MAKE) debug
 
 dev:
 	$(COMPOSE_DEV) up -d --build
@@ -25,7 +41,7 @@ debug:
 	$(COMPOSE_DEBUG) up -d --build
 
 initdb:
-	./initdb.sh
+	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh
 
 down:
 	$(COMPOSE_DEBUG) down
@@ -64,9 +80,11 @@ play:
 
 help:
 	@echo "Available targets:"
+	@echo "  setup          One command from clone to running stack: env + initdb + debug."
+	@echo "  env            Create .env and keys/jwt-secret from templates (never overwrites)."
 	@echo "  dev            Start the local stack in dev mode (real Azure AD login)."
 	@echo "  debug          Start the local stack in debug mode (local JWT login, no Azure)."
-	@echo "  initdb         Bootstrap the database (runs ./initdb.sh)."
+	@echo "  initdb         Bootstrap the database (idempotent; ./initdb.sh --force recreates)."
 	@echo "  down           Stop the local stack (data is kept)."
 	@echo "  clean          Stop the local stack and delete its data volume."
 	@echo "  test           Run all test suites (needs the debug stack up + initdb)."

@@ -46,17 +46,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure environment (template values + debug JWT secret)
-        run: |
-          cp .env.tpl .env
-          mkdir -p keys
-          printf 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' > keys/jwt-secret
-
-      - name: Bootstrap the database
-        run: ./initdb.sh
-
-      - name: Start the full stack in debug mode
-        run: make debug
+      - name: Bootstrap environment, database and stack (debug mode)
+        run: make setup
 
       - name: Wait for PostgREST and the UI
         run: |

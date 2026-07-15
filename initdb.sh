@@ -1,46 +1,103 @@
 #!/usr/bin/env bash
+# Bootstrap the DTrack database by executing everything under dtrack/db/sql/
+# in lexicographic order. Directory names encode which user runs the files on
+# which database (see docs/architecture.md); files are piped through envsubst
+# so $VARIABLES resolve from .env.
+#
+# Idempotent: if the application database already exists this is a no-op.
+# Pass --force to remove the containers and data volume and start over.
+#
+# Respects COMPOSE_FILE, so `make initdb` targets the same compose
+# configuration as `make debug`. Called bare (as on deployed servers) it uses
+# the default compose file resolution.
+set -euo pipefail
+cd "$(dirname "$0")"
 
-# Load environment variables from .env file
+force=false
+for arg in "$@"; do
+    case "$arg" in
+        --force) force=true ;;
+        *)
+            echo "usage: $0 [--force]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ ! -f .env ]]; then
+    echo "No .env file found — run 'make env' (or: cp .env.tpl .env) first." >&2
+    exit 1
+fi
 set -a
+# shellcheck source=/dev/null
 source .env
 set +a
 
-execute_files() {
-  local dir="${1}"
-  local base_dir="$(basename "${dir}")"
-
-  # Extract user and db from filename
-  local user_var="$(echo "${base_dir}" | cut -d. -f2 | tr '[:lower:]' '[:upper:]')"
-  local db_var="$(echo "${base_dir}" | cut -d. -f3 | tr '[:lower:]' '[:upper:]')"
-  local user="${!user_var}"
-  local db="${!db_var}"
-
-  while IFS= read -r -d '' file; do
-    if [[ "${file}" == *.sql ]]; then
-      echo "--> Executing "${file}" as "${user}" on "${db}""
-      envsubst < "${file}" | docker compose exec -T postgres psql -o /dev/null --quiet -U "${user}" -d "${db}"
-    elif [[ "${file}" == *.sh ]]; then
-      echo "--> Executing "${file}" as bash script ("${user}" on "${db}")"
-      envsubst < "${file}" | docker compose exec -T postgres bash -- /dev/stdin -U "${user}" -d "${db}"
-    fi
-  done < <(find "${dir}" -type f \( -name '*.sql' -o -name '*.sh' \) -print0 | sort -z)
+wait_for_postgres() {
+    local i
+    for i in $(seq 1 60); do
+        if docker compose exec -T postgres pg_isready --quiet -U "${POSTGRES_USER}" 2>/dev/null; then
+            return 0
+        fi
+        [[ "$i" == 1 ]] && echo "Waiting for postgres to accept connections..."
+        sleep 1
+    done
+    echo "postgres did not become ready within 60s" >&2
+    return 1
 }
 
-# Wait for psql service to be ready
-docker compose up postgres -d
-while ! docker compose exec postgres pg_isready -U "${POSTGRES_USER}"; do
-  echo "Waiting for psql service to be ready..."
-  sleep 1
-done
-echo "psql service is ready!"
+if [[ "$force" == true ]]; then
+    echo "--> Removing containers and data volume (--force)"
+    docker compose down --volumes
+fi
 
-# Execute SQL commands from files via docker compose exec at the relevant authentication levels
+docker compose up --detach --build postgres
+wait_for_postgres
+
+app_db_exists="$(docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
+    "SELECT count(*) FROM pg_database WHERE datname = '${POSTGRES_DB_APP}'")"
+if [[ "$app_db_exists" == "1" ]]; then
+    echo "Database '${POSTGRES_DB_APP}' already exists — nothing to do (use --force to recreate)."
+    exit 0
+fi
+
+execute_files() {
+    local dir="$1"
+    local base_dir user_var db_var user db file
+    base_dir="$(basename "$dir")"
+
+    # Directory naming: <NNN>.<user-env-var>.<db-env-var>
+    user_var="$(cut -d. -f2 <<<"$base_dir" | tr '[:lower:]' '[:upper:]')"
+    db_var="$(cut -d. -f3 <<<"$base_dir" | tr '[:lower:]' '[:upper:]')"
+    user="${!user_var}"
+    db="${!db_var}"
+
+    while IFS= read -r -d '' file; do
+        if [[ "$file" == *.sql ]]; then
+            echo "--> Executing $file as $user on $db"
+            envsubst <"$file" | docker compose exec -T postgres \
+                psql --quiet --set ON_ERROR_STOP=1 -o /dev/null -U "$user" -d "$db"
+        elif [[ "$file" == *.sh ]]; then
+            echo "--> Executing $file as bash script ($user on $db)"
+            envsubst <"$file" | docker compose exec -T postgres bash -- /dev/stdin -U "$user" -d "$db"
+        fi
+    done < <(find "$dir" -type f \( -name '*.sql' -o -name '*.sh' \) -print0 | sort -z)
+}
+
 for dir in dtrack/db/sql/*; do
-  echo "Procesing "${dir}":"
-  execute_files "${dir}"
+    echo "Processing $dir:"
+    execute_files "$dir"
 done
 
-# During development
-docker compose exec -T postgres bash -c "echo \"log_statement = 'all'\" | tee -a /var/lib/postgresql/data/postgresql.conf"
-docker compose exec -T postgres bash -c "echo \"log_min_messages = 'notice'\" | tee -a /var/lib/postgresql/data/postgresql.conf"
-docker compose kill --signal=SIGTERM postgres
+# Verbose statement logging — useful in development and when inspecting a
+# server. Guarded so a re-bootstrap never appends duplicate lines.
+for setting in "log_statement = 'all'" "log_min_messages = 'notice'"; do
+    docker compose exec -T postgres bash -c \
+        "grep -qxF \"${setting}\" /var/lib/postgresql/data/postgresql.conf ||
+         echo \"${setting}\" >> /var/lib/postgresql/data/postgresql.conf"
+done
+
+echo "--> Restarting postgres to apply configuration"
+docker compose restart postgres
+wait_for_postgres
+echo "Database '${POSTGRES_DB_APP}' bootstrapped."
