@@ -59,11 +59,14 @@ exists it is a no-op. `./initdb.sh --force` recreates everything from scratch
 
 Use `make initdb` rather than calling `./initdb.sh` directly: the make target
 exports the dev/debug compose file set, so postgres keeps its published port
-and dev mounts, and passes `--dev-logging`, which turns on verbose statement
-logging (`log_statement = 'all'`). Called bare (as on deployed servers) the
-script falls back to default compose file resolution and leaves logging at
-Postgres defaults — statement logging writes sensitive data to the server log
-and is strictly a development convenience.
+and dev mounts, and passes two dev-only flags — `--dev-logging`, which turns
+on verbose statement logging (`log_statement = 'all'`), and
+`--test-template`, which snapshots the pristine bootstrap as
+`template_dtrack` for the test runners to clone (see
+[testing.md](testing.md)). Called bare (as on deployed servers) the script
+falls back to default compose file resolution and leaves both off —
+statement logging writes sensitive data to the server log and is strictly a
+development convenience.
 
 | URL | What |
 | --- | --- |

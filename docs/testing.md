@@ -43,19 +43,24 @@ make test    # or test-db / test-api / test-e2e
 
 Notes:
 
-- **DB tests** leave no trace: each file is one transaction that rolls back.
-  pgTAP and pg_prove come from the postgres image's `test` build target,
-  which the dev compose override selects; production builds use the
-  `production` target and carry no test tooling.
-- **API and E2E tests** write real rows under reserved name prefixes
-  (`api …`, `E2E …`). Each runner first executes
-  [tests/cleanup-test-data.sh](../tests/cleanup-test-data.sh), which deletes
-  residue from previous runs, so repeated runs are idempotent and a
-  long-lived dev database stays tidy. Personas (`api.*@hellodnk8n…`) are
-  created idempotently through the API and kept. Don't use the reserved
-  prefixes for real data.
-- Suites run sequentially (one shared database); at the current scale the
-  whole pyramid takes well under a minute locally once images are built.
+- **Tests never touch the dev/debug database.** Each runner drops all but
+  the newest 3 test databases (kept for post-mortems), then clones a fresh
+  `test_<epoch-seconds>_dtrack` from `template_dtrack` — a pristine snapshot
+  `make initdb` takes immediately after bootstrap ([tests/lib.sh](../tests/lib.sh)).
+- **DB tests** run pg_prove against the fresh clone. pgTAP and pg_prove come
+  from the postgres image's `test` build target, which the dev compose
+  override selects; production builds use the `production` target and carry
+  no test tooling.
+- **API and E2E runs rebind PostgREST** to their test database for the
+  duration (the UI follows, since it talks to PostgREST on :3000) and always
+  restore it to the dev database on exit, pass or fail. Expect the API to be
+  briefly unavailable to a parallel dev session while a test run is active.
+- One caveat: Postgres roles are cluster-wide, so the `api.*` personas and
+  any pm/lead grants they accumulate persist across test databases. Rows in
+  `auth.users` are per-database and always fresh; no suite asserts the
+  absence of persona role grants.
+- Suites run sequentially (one PostgREST to rebind); at the current scale
+  the whole pyramid takes well under a minute locally once images are built.
 
 ## CI
 
@@ -131,8 +136,18 @@ Decisions made building this, with the trade-offs considered:
    exact codes (`42501`, `23514`) where they are the contract. List/count
    assertions filter by run-scoped names so suites tolerate existing data.
 8. **Sequential execution** (vitest `fileParallelism: false`, Playwright
-   `workers: 1`) because all suites share one database. Parallelizing would
-   need per-worker schemas or databases — not worth it at this size.
+   `workers: 1`) because all suites share one PostgREST instance and one
+   test database per run. Parallelizing would need per-worker databases and
+   PostgREST instances — not worth it at this size.
+9. **Per-run test databases instead of data cleanup** (revised 2026-07-15;
+   originally the runners deleted residue by reserved name prefixes). Each
+   run clones Postgres's native template mechanism: `make initdb` snapshots
+   the pristine bootstrap as `template_dtrack`, runners clone it in ~a
+   second, and pruning keeps the 3 newest clones for inspection. The dev
+   database is never written to by tests, and the prefix-matching cleanup
+   SQL is gone. Trade-off: PostgREST must be rebound (a container recreate)
+   per API/E2E run, and cluster-wide role grants still leak across runs —
+   both documented above.
 
 Known gaps, on purpose: no load/performance tests, no visual regression, no
 mutation testing, no property-based RLS fuzzing (a future TC-SEC series),

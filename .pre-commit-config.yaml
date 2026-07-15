@@ -8,6 +8,8 @@ repos:
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
+        # Follow sourced files (tests/lib.sh) relative to the script.
+        args: ["--external-sources", "--source-path=SCRIPTDIR"]
         # The db bootstrap fragments are application code (executed through
         # envsubst with a different variable model) — out of scope for now.
         exclude: ^dtrack/db/sql/

@@ -8,6 +8,9 @@
 # Pass --force to remove the containers and data volume and start over.
 # Pass --dev-logging (development only — used by `make initdb`) to enable
 # verbose statement logging; deployed servers must run without it.
+# Pass --test-template (development only — used by `make initdb`) to snapshot
+# the freshly bootstrapped database as template_<app-db>, from which the test
+# runners clone their per-run test databases (see tests/lib.sh).
 #
 # Respects COMPOSE_FILE, so `make initdb` targets the same compose
 # configuration as `make debug`. Called bare (as on deployed servers) it uses
@@ -17,12 +20,14 @@ cd "$(dirname "$0")"
 
 force=false
 dev_logging=false
+test_template=false
 for arg in "$@"; do
     case "$arg" in
         --force) force=true ;;
         --dev-logging) dev_logging=true ;;
+        --test-template) test_template=true ;;
         *)
-            echo "usage: $0 [--force] [--dev-logging]" >&2
+            echo "usage: $0 [--force] [--dev-logging] [--test-template]" >&2
             exit 2
             ;;
     esac
@@ -58,9 +63,40 @@ fi
 docker compose up --detach --build postgres
 wait_for_postgres
 
-app_db_exists="$(docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc \
-    "SELECT count(*) FROM pg_database WHERE datname = '${POSTGRES_DB_APP}'")"
-if [[ "$app_db_exists" == "1" ]]; then
+psql_admin() {
+    docker compose exec -T postgres psql --quiet --tuples-only --no-align \
+        --set ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" "$@"
+}
+
+db_exists() {
+    [[ "$(psql_admin -c "SELECT count(*) FROM pg_database WHERE datname = '$1'")" == "1" ]]
+}
+
+# Snapshot the app database as template_<app-db>. The test runners clone a
+# fresh database from it per run (tests/lib.sh), so it must be pristine —
+# hence taking it immediately after bootstrap. Connections are blocked
+# during the copy (CREATE DATABASE requires an unused source).
+create_test_template() {
+    local template_db="template_${POSTGRES_DB_APP}"
+    if db_exists "${template_db}"; then
+        return 0
+    fi
+    echo "--> Snapshotting '${POSTGRES_DB_APP}' as '${template_db}' for test runs"
+    psql_admin -c "ALTER DATABASE \"${POSTGRES_DB_APP}\" WITH ALLOW_CONNECTIONS false"
+    psql_admin -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                   WHERE datname = '${POSTGRES_DB_APP}'" >/dev/null
+    psql_admin -c "CREATE DATABASE \"${template_db}\" TEMPLATE \"${POSTGRES_DB_APP}\""
+    psql_admin -c "ALTER DATABASE \"${template_db}\" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false"
+    psql_admin -c "ALTER DATABASE \"${POSTGRES_DB_APP}\" WITH ALLOW_CONNECTIONS true"
+}
+
+if db_exists "${POSTGRES_DB_APP}"; then
+    if [[ "$test_template" == true ]] && ! db_exists "template_${POSTGRES_DB_APP}"; then
+        echo "WARNING: snapshotting the test template from the CURRENT state of" >&2
+        echo "'${POSTGRES_DB_APP}', which may not be pristine. For a guaranteed-clean" >&2
+        echo "template, recreate from scratch: ./initdb.sh --force (drops all local data)." >&2
+        create_test_template
+    fi
     echo "Database '${POSTGRES_DB_APP}' already exists — nothing to do (use --force to recreate)."
     exit 0
 fi
@@ -92,6 +128,11 @@ for dir in dtrack/db/sql/*; do
     echo "Processing $dir:"
     execute_files "$dir"
 done
+
+# Snapshot now, while the freshly bootstrapped database is pristine.
+if [[ "$test_template" == true ]]; then
+    create_test_template
+fi
 
 # Verbose logging for development only (make initdb passes --dev-logging):
 # log_statement = 'all' writes every statement, including sensitive data, to

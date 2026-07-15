@@ -41,7 +41,7 @@ debug:
 	$(COMPOSE_DEBUG) up -d --build
 
 initdb:
-	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh --dev-logging
+	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh --dev-logging --test-template
 
 down:
 	$(COMPOSE_DEBUG) down
