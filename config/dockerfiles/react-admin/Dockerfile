@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build
-FROM node:18.16 as react-build
+FROM node:24 as react-build
 WORKDIR /app
 COPY ./package.json ./yarn.lock ./
 RUN yarn
