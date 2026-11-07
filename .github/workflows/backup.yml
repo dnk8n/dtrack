@@ -7,6 +7,9 @@ on:
 
 jobs:
   backup:
+    # Skips (rather than fails) until a deployment sets the PROD_HOST
+    # repository variable.
+    if: vars.PROD_HOST != ''
     runs-on: ubuntu-24.04
     outputs:
       artifact_name: ${{ steps.determine-backup-settings.outputs.artifact_name }}
@@ -22,6 +25,12 @@ jobs:
           echo "$PRIVATE_KEY" > private_key
           chmod 600 private_key
           echo "$HOST_KEY" >> known_hosts
+
+      - name: Render inventory from repository variables
+        env:
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          RESTORE_HOST: ${{ vars.RESTORE_HOST }}
+        run: .github/ansible/render-inventory.sh > .github/ansible/hosts.ini
 
       - name: Run Ansible Playbook (Backup)
         run: |
@@ -73,6 +82,7 @@ jobs:
 
   restore:
     needs: backup
+    if: vars.RESTORE_HOST != ''
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -91,6 +101,12 @@ jobs:
           echo "$PRIVATE_KEY" > private_key
           chmod 600 private_key
           echo "$HOST_KEY_TEST" >> known_hosts
+
+      - name: Render inventory from repository variables
+        env:
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          RESTORE_HOST: ${{ vars.RESTORE_HOST }}
+        run: .github/ansible/render-inventory.sh > .github/ansible/hosts.ini
 
       - name: Run Ansible Playbook (Restore)
         run: ansible-playbook .github/ansible/test-restore-playbook.yml -i .github/ansible/hosts.ini

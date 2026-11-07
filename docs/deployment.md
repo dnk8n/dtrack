@@ -65,5 +65,16 @@ Schema changes require a dump → recreate → restore cycle — see the
 | [backup.yml](../.github/workflows/backup.yml) | every 2 h | pg_dump + cyanaudit dump from prod, uploaded as artifacts with tiered retention (bi-hourly/daily/weekly/monthly), then restored onto staging as a continuous restore test |
 | [rotate-keys.yml](../.github/workflows/rotate-keys.yml) | daily, 00:00 UTC | refreshes the Azure JWKS file PostgREST uses as `PGRST_JWT_SECRET` and HUPs PostgREST |
 
-Both need repo secrets (`PRIVATE_KEY`, `HOST_KEY`, `HOST_KEY_TEST`) and use
-the playbooks in [.github/ansible/](../.github/ansible/).
+Both use the playbooks in [.github/ansible/](../.github/ansible/), with an
+inventory rendered at run time by
+[render-inventory.sh](../.github/ansible/render-inventory.sh) from these
+repository **variables** (Settings → Secrets and variables → Actions):
+
+| Variable | Used for |
+| --- | --- |
+| `PROD_HOST` | backup source, key rotation |
+| `RESTORE_HOST` | continuous restore target, key rotation |
+
+A job whose host variable is unset is skipped, so the schedules stay quiet
+until an environment exists. They also need the repo secrets `PRIVATE_KEY`,
+`HOST_KEY` (prod) and `HOST_KEY_TEST` (restore target).
