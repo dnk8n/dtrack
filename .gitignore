@@ -11,3 +11,9 @@ keys
 *.tar
 venv/
 backup/
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+tests/logs/
+.DS_Store
+.github/ansible/hosts.ini
