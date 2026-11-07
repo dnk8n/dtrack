@@ -85,6 +85,10 @@ docker compose up -d --build react-admin   # rebuild just the UI image
 Handy inspection queries (activity, audit log, durations) live in
 [dtrack/dev/queries/useful.sql](../dtrack/dev/queries/useful.sql).
 
+With the debug stack up and the database bootstrapped, `make test` runs the
+full test pyramid (or `test-db` / `test-api` / `test-e2e` individually) — see
+[testing.md](testing.md).
+
 ### Calling the API directly
 
 Any HS256 JWT signed with the debug secret works against PostgREST in debug

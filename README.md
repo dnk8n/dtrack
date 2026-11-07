@@ -29,6 +29,8 @@ See [docs/development.md](docs/development.md) for the full guide, including dev
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | System design: schemas, roles, RLS, request lifecycle, audit |
 | [docs/development.md](docs/development.md) | Running and working on DTrack locally |
+| [docs/testing.md](docs/testing.md) | Test strategy, how to run the suites, testing policies |
+| [docs/test-cases.md](docs/test-cases.md) | Natural-language test case catalog (`TC-…` ids) |
 | [docs/deployment.md](docs/deployment.md) | Provisioning infrastructure and deploying |
 | [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md) | Backup, test-restore and live-restore procedures |
 
@@ -38,8 +40,9 @@ See [docs/development.md](docs/development.md) for the full guide, including dev
 dtrack/db/sql/       Database bootstrap SQL, executed in order by initdb.sh
 dtrack/ui/           react-admin single-page app (Vite + TypeScript)
 dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
+tests/               pgTAP, API (Vitest) and E2E (Playwright) suites
 config/              Docker images, compose overrides, Ansible playbooks
-.github/             CI/CD workflows and their Ansible playbooks
+.github/             CI and operations workflows, their Ansible playbooks
 main.tf              Terraform: AWS EC2 + Cloudflare DNS + GitHub deploy keys
 ```
 
