@@ -34,16 +34,15 @@ jobs:
 
       - name: Run Ansible Playbook (Backup)
         run: |
-          EXTRA_VARS=""
+          extra_vars=()
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            EXTRA_VARS="-e run_mode=manual"
+            extra_vars=(-e run_mode=manual)
           fi
-          ansible-playbook $EXTRA_VARS .github/ansible/backup-playbook.yml -i .github/ansible/hosts.ini
+          ansible-playbook "${extra_vars[@]}" .github/ansible/backup-playbook.yml -i .github/ansible/hosts.ini
 
       - name: Determine backup settings
         id: determine-backup-settings
         run: |
-          current_utc_date=$(date --utc +%Y%m%dT%H%M%S)
           day_of_month=$(date --utc +%d)
           hour_of_day=$(date --utc +%H)
           day_of_week=$(date --utc +%A)
@@ -65,8 +64,8 @@ jobs:
             retention="10"
             artifact_name="backup-bihourly"
           fi
-          echo "retention=$retention" >> $GITHUB_OUTPUT
-          echo "artifact_name=$artifact_name" >> $GITHUB_OUTPUT
+          echo "retention=$retention" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
 
       - name: Upload backup artifacts
         uses: actions/upload-artifact@v7

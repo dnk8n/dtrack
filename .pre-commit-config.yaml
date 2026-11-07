@@ -18,3 +18,9 @@ repos:
     hooks:
       - id: terraform_validate
       - id: terraform_fmt
+  - repo: "https://github.com/rhysd/actionlint"
+    rev: v1.7.12
+    hooks:
+      # Also runs shellcheck on `run:` scripts when shellcheck is on PATH
+      # (it is on GitHub's ubuntu runners).
+      - id: actionlint
