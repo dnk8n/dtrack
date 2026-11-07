@@ -34,6 +34,13 @@ jobs:
         working-directory: dtrack/ui
         run: npx prettier --check "./**/*.{js,jsx,ts,tsx,css,md,json}"
 
+      # The terraform_validate/terraform_fmt hooks need the CLI, which
+      # ubuntu-latest does not ship.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
       - name: Run pre-commit hooks
         uses: pre-commit/action@v3.0.1
 
