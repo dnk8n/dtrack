@@ -97,11 +97,11 @@
     - name: Create .env file
       copy:
         content: |
-          # Variables for docker-compose.overide.yaml
+          # Variables for docker-compose.override.yaml
           TRAEFIK_BASICAUTH={{ traefik_basicauth }}
           HOST={{ inventory_hostname }}
           ACME_EMAIL={{ acme_email }}
-          # Initial proveleged Postgres DB and superuser credentials
+          # Initial privileged Postgres DB and superuser credentials
           POSTGRES_DB=postgres
           POSTGRES_USER=postgres
           POSTGRES_PASSWORD={{ postgres_password_superuser }}

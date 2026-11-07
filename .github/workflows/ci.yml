@@ -7,12 +7,12 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: yarn
@@ -34,8 +34,25 @@ jobs:
         working-directory: dtrack/ui
         run: npx prettier --check "./**/*.{js,jsx,ts,tsx,css,md,json}"
 
+      # The terraform_validate/terraform_fmt hooks need the CLI, which
+      # the runner image does not ship.
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+
+      # The same steps as pre-commit/action@v3.0.1, whose latest release still
+      # pins actions/cache@v4 (a deprecated Node 20 action).
+      - name: Install pre-commit
+        run: python -m pip install pre-commit
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit hooks
-        uses: pre-commit/action@v3.0.1
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
 
       - name: Check test case ids are documented
         run: ./tests/check-test-case-ids.sh
@@ -44,15 +61,15 @@ jobs:
     # Each runner recreates the isolated test environment (own compose
     # project, cluster and ports) from the ground up; the dev stack is not
     # needed at all in CI.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create environment files from templates
         run: make env
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -63,7 +80,7 @@ jobs:
 
       - name: Upload test artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-artifacts
           path: |
@@ -83,7 +100,7 @@ jobs:
 
       - name: Upload test environment container logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: compose-logs
           path: compose-logs-*.txt

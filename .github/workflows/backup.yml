@@ -7,12 +7,12 @@ on:
 
 jobs:
   backup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       artifact_name: ${{ steps.determine-backup-settings.outputs.artifact_name }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setting up SSH key and known hosts (Backup server)
         env:
@@ -60,7 +60,7 @@ jobs:
           echo "artifact_name=$artifact_name" >> $GITHUB_OUTPUT
 
       - name: Upload backup artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.determine-backup-settings.outputs.artifact_name }}
           path: /tmp/backup/
@@ -73,12 +73,12 @@ jobs:
 
   restore:
     needs: backup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.backup.outputs.artifact_name }}
           path: /tmp/backup

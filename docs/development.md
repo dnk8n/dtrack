@@ -1,8 +1,8 @@
 # Local development
 
 Everything runs in Docker Compose. The only host prerequisites are Docker with
-the compose plugin and (optionally, for UI work outside containers) Node 18+
-with yarn.
+the compose plugin and (optionally, for UI work outside containers) Node 24
+(the version the UI image and CI use) with yarn.
 
 On macOS without Docker Desktop:
 
@@ -127,12 +127,12 @@ pre-commit hook runs lint on commit inside `dtrack/ui`).
 ## Troubleshooting
 
 - **PostgREST restarts / "Password authentication failed"** — database not
-  initialized yet; run `./initdb.sh`.
+  initialized yet; run `make initdb`.
 - **UI login succeeds but everything 401s** — stale browser storage after
   switching dev/debug modes; clear site data for localhost.
 - **`role "…" does not exist` from PostgREST** — you logged in (debug mode) as
   a user that was never created. Log in as the power user and create the
   employee first.
 - **`keys/jwt-secret` is a directory** — see one-time setup above.
-- **initdb.sh errors mid-way** — it assumes a fresh volume. `make clean`, then
-  `make debug`, then re-run.
+- **`make initdb` errors mid-way** — it assumes a fresh volume. Fix the cause,
+  then `make clean` and `make setup` to start again from an empty volume.
