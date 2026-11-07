@@ -8,6 +8,8 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.determine-backup-settings.outputs.artifact_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
