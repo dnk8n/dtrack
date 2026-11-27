@@ -71,8 +71,8 @@ up from scratch:
 
 - The dashboard summary lists each month once per user (or project) for
   leads and power users, which may inflate chart totals. Members' own view
-  is correct.
+  is correct (#72).
 - Saving a team that has only its lead, with an empty member list, fails
-  with a duplicate-key error.
+  with a duplicate-key error (#73).
 - The deploy play wipes the database (BUG-001, see
   [deployment.md](../deployment.md)).

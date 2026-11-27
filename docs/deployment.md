@@ -29,7 +29,9 @@ Which login each environment uses depends on its compose override:
 A debug-login environment trusts anyone holding the shared debug secret,
 which is in this repository, to act as any user. Keep real data off it, and
 note that the backup workflow restores production data onto `RESTORE_HOST`:
-check which override that host runs.
+check which override that host runs. The template points it at a
+`staging-debug` host, which is exactly this risk (BUG-002, #6; fix tracked in
+#21 and #36).
 
 ## Prerequisites
 

@@ -2,12 +2,13 @@
 
 Operational procedure for backing up production, testing the restore locally,
 and restoring onto a live server (used for schema-change deploys, since schema
-is recreated rather than migrated). The automated equivalent runs bi-hourly via
+is recreated rather than migrated). `<PROD_HOST>` and `<STAGING_HOST>` are
+your servers' hostnames (the `HOST` in each server's `.env`). The automated equivalent runs bi-hourly via
 [backup.yml](../../.github/workflows/backup.yml).
 
 # 1. Backup
 ## Dev machine
-- `ssh ubuntu@dtrack.rethinkcode.org -i keys/prod/instance/id`
+- `ssh ubuntu@<PROD_HOST> -i keys/prod/instance/id`
 - `screen -S dtrack-backup`
 ## Production server
 - `cd /home/ubuntu/dtrack`
@@ -34,7 +35,7 @@ is recreated rather than migrated). The automated equivalent runs bi-hourly via
 - `TODAY="$(date --iso)"`
 - `BACKUP_DIR=~/Documents/dtrack/backups/"${TODAY}"`
 - `rm -rf "${BACKUP_DIR}"`
-- `scp -i keys/prod/instance/id -r ubuntu@dtrack.rethinkcode.org:/home/ubuntu/backups/"${TODAY}" "${BACKUP_DIR}"`
+- `scp -i keys/prod/instance/id -r ubuntu@<PROD_HOST>:/home/ubuntu/backups/"${TODAY}" "${BACKUP_DIR}"`
 - `cd ~/src/dtrack`
 - `git checkout main`
 - `git pull`
@@ -59,10 +60,10 @@ is recreated rather than migrated). The automated equivalent runs bi-hourly via
 ## Dev machine
 - `TODAY="$(date --iso)"`
 - `BACKUP_DIR=~/Documents/dtrack/backups/"${TODAY}"`
-- `scp -i keys/staging/instance/id -r "${BACKUP_DIR}" ubuntu@dtrack-staging.rethinkcode.org:/home/ubuntu/backups/"${TODAY}"` (prod already has the backup)
+- `scp -i keys/staging/instance/id -r "${BACKUP_DIR}" ubuntu@<STAGING_HOST>:/home/ubuntu/backups/"${TODAY}"` (prod already has the backup)
 - SSH to live server:
-  - Test: `ssh ubuntu@dtrack-staging.rethinkcode.org`
-  - Prod: `ssh ubuntu@dtrack.rethinkcode.org`
+  - Test: `ssh ubuntu@<STAGING_HOST>`
+  - Prod: `ssh ubuntu@<PROD_HOST>`
 - `screen -S dtrack-restore`
 ## Live server
 - `cd /home/ubuntu/dtrack`
@@ -142,5 +143,5 @@ $$ LANGUAGE plpgsql;
 - `exit`
 - `exit`
 - Perform sanity check at:
-  - Staging: https://dtrack-staging.rethinkcode.org
-  - Prod: https://dtrack.rethinkcode.org
+  - Staging: https://<STAGING_HOST>
+  - Prod: https://<PROD_HOST>
