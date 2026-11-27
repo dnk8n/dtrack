@@ -18,7 +18,7 @@ describe('authentication and role switching', () => {
   });
 
   test('TC-AUTH-103: a valid token for a non-existent user is rejected', async () => {
-    const ghost = await asUser('no.such.user@hellodnk8n.onmicrosoft.com');
+    const ghost = await asUser('no.such.user@example.com');
     const res = await ghost.get('/current_employee');
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(res.body)).toMatch(/does not exist/);

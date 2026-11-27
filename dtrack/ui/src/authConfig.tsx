@@ -48,6 +48,7 @@ const getIdentityFromAccount = async (account: AccountInfo) => {
   return {
     ...account,
     id: employeeProfile?.id,
+    email: employeeProfile?.email,
     fullName: employeeProfile?.fullName || account.name,
   };
 };

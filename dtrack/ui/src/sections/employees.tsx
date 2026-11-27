@@ -426,7 +426,11 @@ const validateUsername = (value: string) => {
 
 const EmployeeForm: React.FC<EmployeeFormProps> = ({ mode }) => {
   const { permissions, isLoading: permissionsLoading } = usePermissions();
-  if (permissionsLoading) return null;
+  const { data: identity, isLoading: identityLoading } = useGetIdentity();
+  if (permissionsLoading || identityLoading) return null;
+  // New employees get the signed-in admin's email domain, mirroring
+  // internal.employees_upsert, so no tenant domain is hard-coded.
+  const emailDomain = String(identity?.email ?? '').split('@')[1] ?? '';
   return (
     <SimpleForm>
       <TextInput
@@ -442,7 +446,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({ mode }) => {
                 <TextInput
                   disabled
                   source="email"
-                  format={() => `${formData.username}@hellodnk8n.onmicrosoft.com`} //TODO: Remove hardcoding
+                  format={() => `${formData.username}@${emailDomain}`}
                 />
                 <TextInput
                   disabled

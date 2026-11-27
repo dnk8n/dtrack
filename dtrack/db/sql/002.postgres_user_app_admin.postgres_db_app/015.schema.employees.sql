@@ -2,8 +2,14 @@ CREATE
 OR REPLACE FUNCTION internal.employees_upsert () RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
     new_user_id integer;
-    new_email text = COALESCE(NEW.email, NEW.username || '@hellodnk8n.onmicrosoft.com');  -- TODO: Remove hardcoding
+    -- A new employee created without an email gets the creating user's own
+    -- domain (the caller's role is their email), so no tenant domain is
+    -- configured anywhere: switching Azure tenants needs no code change.
+    new_email text = COALESCE(NEW.email, NEW.username || '@' || NULLIF(split_part(current_user, '@', 2), ''));
 BEGIN
+    IF new_email IS NULL THEN
+        RAISE EXCEPTION 'email is required: cannot derive a domain from role %', current_user;
+    END IF;
     -- If the new ID is NULL, create a new user using the provided data
     IF NEW.id IS NULL THEN
         EXECUTE 'SELECT auth.create_user($1, $2, $3, $4)'

@@ -23,7 +23,7 @@ test('TC-E2E-002: an unknown user cannot reach the workspace', async ({ page }) 
   await page.goto('/');
   await page
     .getByLabel('Enter any username for DEBUG login')
-    .fill('ghost.user@hellodnk8n.onmicrosoft.com');
+    .fill('ghost.user@example.com');
   await page.getByRole('button', { name: 'Login as this User' }).click();
 
   // Whatever the exact failure UX, the authenticated menu must not appear.

@@ -4,6 +4,7 @@ let lastOnboardFailureTime = 0;
 export interface EmployeeProfile {
   id: number;
   fullName: string;
+  email: string;
   roles: string[];
 }
 
@@ -17,7 +18,7 @@ export const getEmployeeProfile = async (
     const response = await fetch(
       `${
         import.meta.env.VITE_API_BASE_URI
-      }/current_employee?select=id,first_name,last_name,roles`,
+      }/current_employee?select=id,email,first_name,last_name,roles`,
       {
         method: 'GET',
         headers: {
@@ -31,6 +32,7 @@ export const getEmployeeProfile = async (
       const data = await response.json();
       return {
         id: data[0].id,
+        email: data[0].email,
         fullName: `${data[0].first_name} ${data[0].last_name}`,
         roles: data[0].roles,
       };
