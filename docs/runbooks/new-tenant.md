@@ -184,18 +184,18 @@ the same three variables. Things specific to a server:
 - With Terraform + Ansible, set them per environment in `terraform.tfvars`
   (`azure_tenant_id`, `azure_client_id`, `postgres_user_app_power`); the
   playbook writes them into the server's `.env`. On a hand-built server, edit
-  `.env` directly (see [deployment.md](../deployment.md#manual-single-server-deploy)).
+  `.env` directly (see [deployment.md](../deployment.md#single-server-deploy-pull-based)).
 - Only the `prod` compose override signs in through Entra ID. The Terraform
   `staging` environment uses `staging-debug`, which has the debug login and
   ignores these values.
 
-- The tenant and client IDs and `HOST` are baked into the UI at **build**
-  time (Vite build args), so the `react-admin` image must be built for that
-  tenant and host.
-- After `./rotate-keys.sh`, recreate PostgREST
-  (`docker compose up -d --force-recreate postgrest`). Replacing the key file
-  may not reach the running container otherwise (#69).
-- Schedule `./rotate-keys.sh` (daily is plenty) so the keys follow
+- With the single-server stack, the published UI image reads the tenant ID,
+  client ID and `HOST` from the container environment at start, so changing
+  them only needs `docker compose up -d`. The Terraform/Ansible stack still
+  bakes them in at **build** time, so there the `react-admin` image must be
+  rebuilt.
+- `./rotate-keys.sh` reloads PostgREST itself when the keys change. Schedule
+  it (the single-server cron file runs it every 6 hours) so the keys follow
   Microsoft's key rotation.
 - The server must allow outbound HTTPS to `login.microsoftonline.com` for the
   key download and for onboarding (from inside the Postgres container).
@@ -209,8 +209,10 @@ organisation's real one.
 
 1. Register the app in the new tenant (section 2) with the server's redirect
    URI.
-2. Set the three values in the server's `.env`, run `./rotate-keys.sh`, and
-   rebuild and recreate: `docker compose up -d --build --force-recreate react-admin postgrest`.
+2. Set the three values in the server's `.env`, run `./rotate-keys.sh`, then
+   recreate the UI and API: `docker compose up -d --force-recreate react-admin postgrest`
+   (single-server stack). On the Terraform/Ansible stack add `--build`, since
+   its UI image bakes the IDs in.
 3. **Existing data.** Users are Postgres roles named after their UPN in the
    tenant they signed in with. Users from the new tenant have different UPNs
    and onboard as new, empty `basic` users. `POSTGRES_USER_APP_POWER` is only

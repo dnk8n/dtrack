@@ -4,6 +4,7 @@ import { MsalHttpClientParams, msalRefreshAuth } from 'ra-auth-msal';
 import { addRefreshAuthToDataProvider, fetchUtils, Options } from 'react-admin';
 
 import { msalInstance, tokenRequest } from './authConfig';
+import { config } from './config';
 
 type MsalHttpClientParamsRequiredTokenRequest = MsalHttpClientParams & {
   tokenRequest: SilentRequest;
@@ -24,7 +25,7 @@ const postgrestHttpClient =
 
 export const dataProvider = addRefreshAuthToDataProvider(
   postgrestRestProvider(
-    import.meta.env.VITE_API_BASE_URI,
+    config.apiBaseUri,
     postgrestHttpClient({ msalInstance, tokenRequest }),
   ),
   msalRefreshAuth({

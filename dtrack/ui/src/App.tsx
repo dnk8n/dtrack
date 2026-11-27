@@ -12,6 +12,7 @@ import { defaultTheme } from 'react-admin';
 import { BrowserRouter } from 'react-router-dom';
 
 import { authProvider as productionAuthProvider } from './authConfig';
+import { config } from './config';
 import { Dashboard } from './Dashboard';
 import { dataProvider as productionDataProvider } from './dataConfig';
 import { debugAuthProvider } from './debug/authConfig';
@@ -66,10 +67,10 @@ const theme = {
   ...defaultTheme,
   palette: {
     primary: {
-      main: import.meta.env.VITE_PALETTE_PRIMARY || '#330808',
+      main: config.palettePrimary,
     },
     secondary: {
-      main: import.meta.env.VITE_PALETTE_SECONDARY || '#A32122',
+      main: config.paletteSecondary,
     },
   },
 };

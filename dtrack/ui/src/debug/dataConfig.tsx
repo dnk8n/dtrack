@@ -1,5 +1,7 @@
 import postgrestRestProvider from '@raphiniert/ra-data-postgrest';
 import { fetchUtils, Options } from 'react-admin';
+
+import { config } from '../config';
 const postgrestHttpClient =
   () =>
   async (url: string, options: Options = {}) => {
@@ -8,6 +10,6 @@ const postgrestHttpClient =
     return fetchUtils.fetchJson(url, { ...options, user });
   };
 export const debugDataProvider = postgrestRestProvider(
-  import.meta.env.VITE_API_BASE_URI,
+  config.apiBaseUri,
   postgrestHttpClient(),
 );

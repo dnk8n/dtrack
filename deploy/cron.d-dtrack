@@ -1,0 +1,12 @@
+# /etc/cron.d/dtrack — scheduled jobs for the single-server stack.
+# Install: sudo install -m 644 deploy/cron.d-dtrack /etc/cron.d/dtrack
+# Adjust the checkout path (/opt/dtrack) if yours differs. Output goes to the
+# journal: journalctl -t dtrack-backup / -t dtrack-keys
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Nightly database backup into /var/backups/dtrack (7 days kept).
+15 1 * * * root /opt/dtrack/deploy/backup-db.sh 2>&1 | logger -t dtrack-backup
+
+# Refresh the Entra ID signing keys PostgREST checks tokens against.
+40 */6 * * * root /opt/dtrack/rotate-keys.sh 2>&1 | logger -t dtrack-keys

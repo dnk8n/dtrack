@@ -1,3 +1,5 @@
+import { config } from './config';
+
 let onboardInProgress = false;
 let lastOnboardFailureTime = 0;
 
@@ -16,9 +18,7 @@ export const getEmployeeProfile = async (
     // Too early to be able to use data provider here as it is not yet initialised at this stage
     // TODO: Possibly implement error handling in case the call to current_employee fails
     const response = await fetch(
-      `${
-        import.meta.env.VITE_API_BASE_URI
-      }/current_employee?select=id,email,first_name,last_name,roles`,
+      `${config.apiBaseUri}/current_employee?select=id,email,first_name,last_name,roles`,
       {
         method: 'GET',
         headers: {
@@ -46,7 +46,7 @@ export const getEmployeeProfile = async (
             // 1 hour in milliseconds
             onboardInProgress = true;
             try {
-              await fetch(`${import.meta.env.VITE_API_BASE_URI}/rpc/onboard`, {
+              await fetch(`${config.apiBaseUri}/rpc/onboard`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
