@@ -44,6 +44,7 @@ journeys. A journey may be implemented as several serial specs
 | TC-AUTH-104 | An authenticated user retrieves themself via `current_employee`, including roles and `is_power` | automated |
 | TC-AUTH-105 | The OpenAPI description is served at the API root | automated |
 | TC-ONB-101 | `POST /rpc/onboard` is callable anonymously and rejects invalid id tokens | automated |
+| TC-ONB-002 | `auth.create_user` succeeds under PostgREST's request search_path (`api, public`) with no `cyanaudit.uid`, as in anonymous onboarding (#70) | automated |
 | TC-ONB-001 | First login of an unknown Azure user onboards them (role + `auth.users` row) and the SPA proceeds | manual — needs a real Azure id token; verified in staging |
 
 ## Employees & user management

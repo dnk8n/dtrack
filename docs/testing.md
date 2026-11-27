@@ -43,6 +43,12 @@ make test    # all three suites in parallel; or test-db / test-api / test-e2e
 
 Notes:
 
+- **Run the suites with the template's power user.** The test environments
+  read `.env`, and the suites expect `POSTGRES_USER_APP_POWER` to be
+  `Dummy.User@example.com` (the `.env.tpl` value). If your `.env` holds real
+  Azure values for `make dev`, the api and e2e suites fail with
+  `role "Dummy.User@example.com" does not exist`; put the template value back
+  (or keep a separate copy of `.env`) while testing. Known gap (#71).
 - **Each suite runs in its own completely isolated environment** — one
   compose project per suite with its own postgres cluster, PostgREST and UI
   on its own host ports, built from the same compose files as dev/debug plus

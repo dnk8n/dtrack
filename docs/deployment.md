@@ -4,6 +4,35 @@ Staging and production each run the same compose stack on a single AWS EC2
 instance behind Cloudflare, with Traefik (from the `staging`/`prod` compose
 overrides) terminating TLS.
 
+## The server
+
+For the overall order of work from nothing (local → Azure → server → first
+use), see [the README](../README.md#setting-up-a-new-system-from-scratch).
+There are two ways to deploy: Terraform + Ansible (below), or by hand on an
+existing server ([manual single-server deploy](#manual-single-server-deploy)).
+
+The server's address is `HOST` in `.env`. With Terraform it is
+`<subdomain>.<domain>` from `terraform.tfvars`. The UI is served at
+`https://HOST`, the API at `https://HOST/api`, Swagger UI at
+`https://HOST/swagger` and the Traefik dashboard at `https://traefik.HOST`
+(basic auth from `TRAEFIK_BASICAUTH`). DNS for both `HOST` and
+`traefik.HOST` must point at the server.
+
+Which login each environment uses depends on its compose override:
+
+| Override | Login | Used by |
+| --- | --- | --- |
+| `prod` | Azure (MSAL) | Terraform `prod` |
+| `staging-debug` | Debug login (shared secret, anyone can sign in as anyone) | Terraform `staging` |
+| `staging` | Azure (MSAL); TLS via Cloudflare DNS challenge (`ACME_PROVIDER`, `CF_API_*`) | not used by default |
+
+A debug-login environment trusts anyone holding the shared debug secret,
+which is in this repository, to act as any user. Keep real data off it, and
+note that the backup workflow restores production data onto `RESTORE_HOST`:
+check which override that host runs. The template points it at a
+`staging-debug` host, which is exactly this risk (BUG-002, #6; fix tracked in
+#21 and #36).
+
 ## Prerequisites
 
 - AWS account + IAM user (EC2 access) configured via AWS CLI
@@ -57,6 +86,41 @@ Deploys of new code are the same playbook re-run (tag `deploy`).
 
 Schema changes require a dump → recreate → restore cycle — see the
 [backup & restore runbook](runbooks/backup-restore.md).
+
+## Manual single-server deploy
+
+For a server that already exists (any Linux host with a public address and
+DNS for `HOST` and `traefik.HOST` pointing at it, ports 80 and 443 open).
+This is what the Ansible playbook does, without the database wipe:
+
+```sh
+# On the server: Docker with the compose plugin, git, and envsubst
+# (Ubuntu: package gettext-base, usually preinstalled)
+git clone <repository URL> dtrack && cd dtrack
+
+cp .env.tpl .env
+$EDITOR .env
+#   HOST                     the server's address, e.g. dtrack.example.org
+#   ACME_EMAIL               Let's Encrypt contact
+#   TRAEFIK_BASICAUTH        htpasswd -bnBC 10 "" <password> | tr -d ':\n'
+#   POSTGRES_PASSWORD, POSTGRES_PASSWORD_APP, POSTGRES_PASSWORD_APP_ADMIN
+#                            strong, distinct passwords
+#   AZURE_TENANT_ID, AZURE_CLIENT_ID, POSTGRES_USER_APP_POWER
+#                            see runbooks/new-tenant.md
+#   PALETTE_PRIMARY/SECONDARY  optional UI colours
+
+ln -s config/docker-compose.overrides/prod.yaml docker-compose.override.yaml
+./rotate-keys.sh             # tenant signing keys into keys/jwt-secret (#69)
+docker compose build --pull
+./initdb.sh                  # creates and bootstraps the database (once)
+docker compose up -d
+```
+
+Then open `https://HOST` and continue with
+[runbooks/first-run.md](runbooks/first-run.md). Run `./initdb.sh` only on
+a new database: on an existing one it does nothing, and `--force` deletes
+it. Schedule `./rotate-keys.sh` (daily) on the server, or use the GitHub
+workflow below.
 
 ## Scheduled operations (GitHub Actions)
 
