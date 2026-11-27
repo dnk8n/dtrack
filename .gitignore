@@ -1,3 +1,4 @@
+.claude
 .env
 docker-compose.override.y*ml
 .project
