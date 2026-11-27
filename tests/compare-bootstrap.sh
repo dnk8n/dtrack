@@ -22,7 +22,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Normalised: pg_dump's per-run \restrict keys and the creation time in
+# cyanaudit's active partition constraint differ on every run.
 dump() {
+    dump_raw | sed -E -e '/^\\(un)?restrict /d' \
+        -e "s/(partition_range_chk CHECK \(\(recorded >= )'[^']*'/\\1'<install time>'/"
+}
+
+dump_raw() {
     docker compose exec -T postgres pg_dump -U postgres --schema-only \
         --exclude-schema=dbmate dtrack
     docker compose exec -T postgres pg_dumpall -U postgres --roles-only \
