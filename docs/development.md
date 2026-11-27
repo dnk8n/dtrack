@@ -37,6 +37,11 @@ mount must still resolve.
 | Onboarding (`/rpc/onboard`) | Works (validates Azure id tokens in-database) | **Does not work** — create users via the Employees screen instead |
 | Use for | Verifying the real auth path | Day-to-day development and automated tests |
 
+To use `make dev`, follow [runbooks/new-tenant.md](runbooks/new-tenant.md)
+(app registration with redirect URI `http://localhost:5174/auth-callback`,
+the three `AZURE_*`/power-user values in `.env`, `./rotate-keys.sh`, then a
+fresh `make initdb`).
+
 Both modes use the `dev` compose override (published ports, verbose PostgREST).
 Switching between them: rebuild (`make dev` / `make debug` handle this) **and
 clear the browser's storage for localhost** — MSAL and the debug provider
@@ -77,6 +82,15 @@ The initial power user is `$POSTGRES_USER_APP_POWER` from `.env`
 (`Dummy.User@example.com` by default). Create further users through the
 Employees screen while logged in as the power user, then log in as them —
 debug mode can impersonate any *existing* user.
+
+## Demo data
+
+[dtrack/dev/fixtures/simulated](../dtrack/dev/fixtures/simulated/README.md)
+loads three months of realistic data for one lead and one member into a fresh
+local database whose users already exist (in `make dev` mode: they signed in
+once). It acts as each real user and uses the power user only where the
+schema requires it. See [runbooks/first-run.md](runbooks/first-run.md) for
+who may do what.
 
 ## Everyday commands
 

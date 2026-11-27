@@ -10,7 +10,7 @@ Time tracking for teams, built SQL-first: the database **is** the application.
 
 ## Quickstart (local, no Azure required)
 
-Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`), and this repo cloned.
+Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`), `envsubst` (GNU gettext; macOS: `brew install gettext`), and this repo cloned.
 
 ```sh
 make setup    # .env + keys from templates, bootstrap the database, start the stack
@@ -31,9 +31,13 @@ and a server, work through these in order:
    Microsoft sign-in locally:** [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md)
    sections 1–4. Optionally load realistic sample data from
    [dtrack/dev/fixtures/simulated](dtrack/dev/fixtures/simulated/README.md).
-3. **Deploy to the server:** [docs/deployment.md](docs/deployment.md), plus the
-   server notes in [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
-4. **Switch from a test tenant to the real one, and restore data if you have a
+3. **Deploy to the server:** [docs/deployment.md](docs/deployment.md) (Terraform +
+   Ansible, or the manual single-server deploy), plus the server notes in
+   [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
+4. **Bring it into use:** [docs/runbooks/first-run.md](docs/runbooks/first-run.md):
+   who signs in first, what only the power user configures, then leads and
+   members.
+5. **Switch from a test tenant to the real one, and restore data if you have a
    backup:** [new-tenant.md section 6](docs/runbooks/new-tenant.md#6-switch-an-existing-deployment-to-another-tenant)
    and [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md).
 
@@ -47,7 +51,8 @@ and a server, work through these in order:
 | [docs/test-cases.md](docs/test-cases.md) | Natural-language test case catalog (`TC-…` ids) |
 | [docs/deployment.md](docs/deployment.md) | Provisioning infrastructure and deploying |
 | [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md) | Backup, test-restore and live-restore procedures |
-| [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md) | Point DTrack at a new Azure (Entra ID) tenant, verify locally, repeat on a server |
+| [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md) | Entra ID (Azure) sign-in from scratch: tenant, app registration, users, local verification, server notes, switching tenants |
+| [docs/runbooks/first-run.md](docs/runbooks/first-run.md) | Bringing a new installation into use: roles in practice, what only the power user does, order of work |
 
 ## Repository layout
 
@@ -55,6 +60,7 @@ and a server, work through these in order:
 dtrack/db/sql/       Database bootstrap SQL, executed in order by initdb.sh
 dtrack/ui/           react-admin single-page app (Vite + TypeScript)
 dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
+dtrack/dev/fixtures/simulated/  Seeded demo data loader for local use
 tests/               pgTAP, API (Vitest) and E2E (Playwright) suites
 config/              Docker images, compose overrides, Ansible playbooks
 .github/             CI and operations workflows, their Ansible playbooks

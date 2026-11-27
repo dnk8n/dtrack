@@ -181,6 +181,14 @@ Repeat sections 2 to 4 with the server's values: the server's `HOST`
 redirect URI must be on the app registration, and the server's `.env` holds
 the same three variables. Things specific to a server:
 
+- With Terraform + Ansible, set them per environment in `terraform.tfvars`
+  (`azure_tenant_id`, `azure_client_id`, `postgres_user_app_power`); the
+  playbook writes them into the server's `.env`. On a hand-built server, edit
+  `.env` directly (see [deployment.md](../deployment.md#manual-single-server-deploy)).
+- Only the `prod` compose override signs in through Entra ID. The Terraform
+  `staging` environment uses `staging-debug`, which has the debug login and
+  ignores these values.
+
 - The tenant and client IDs and `HOST` are baked into the UI at **build**
   time (Vite build args), so the `react-admin` image must be built for that
   tenant and host.
