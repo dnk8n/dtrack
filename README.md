@@ -10,7 +10,7 @@ Time tracking for teams, built SQL-first: the database **is** the application.
 
 ## Quickstart (local, no Azure required)
 
-Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`), `envsubst` (GNU gettext; macOS: `brew install gettext`), and this repo cloned.
+Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`) and this repo cloned.
 
 ```sh
 make setup    # .env + keys from templates, bootstrap the database, start the stack
@@ -57,7 +57,7 @@ and a server, work through these in order:
 ## Repository layout
 
 ```
-dtrack/db/sql/       Database bootstrap SQL, executed in order by initdb.sh
+dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by initdb.sh)
 dtrack/ui/           react-admin single-page app (Vite + TypeScript)
 dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
 dtrack/dev/fixtures/simulated/  Seeded demo data loader for local use

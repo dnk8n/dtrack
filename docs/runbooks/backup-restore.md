@@ -1,8 +1,17 @@
 # Backup & restore runbook
 
 Operational procedure for backing up production, testing the restore locally,
-and restoring onto a live server (used for schema-change deploys, since schema
-is recreated rather than migrated). `<PROD_HOST>` and `<STAGING_HOST>` are
+and restoring onto a live server (moving to a new server, or recovering from
+data loss). Schema changes don't need it: `./initdb.sh` applies migrations in
+place ([deployment.md](../deployment.md)).
+
+Backups are data-only. The schema comes from the checkout: `./initdb.sh`
+bootstraps the empty database and applies every migration, then the data is
+loaded into it. Restore with the same commit (or a later one, if no migration
+in between changes the shape of existing tables) as the server the backup came
+from. The `dbmate` schema (migration history) is left out of backups because
+the restore target already has its own. Don't run `./power-user.sh` before a
+restore: the power user's row would collide with the restored users. `<PROD_HOST>` and `<STAGING_HOST>` are
 your servers' hostnames (the `HOST` in each server's `.env`). The automated equivalent runs bi-hourly via
 [backup.yml](../../.github/workflows/backup.yml).
 
@@ -16,7 +25,7 @@ your servers' hostnames (the `HOST` in each server's `.env`). The automated equi
 - Only if proceding to a prod deploy (worth testing restore without this step): `docker compose kill --signal=SIGTERM postgrest react-admin`
 - `docker compose exec postgres bash`
 - `rm -rf /tmp/dtrack.dump /tmp/cyanaudit`
-- `pg_dump -U admin -Fc --exclude-schema cyanaudit --data-only -f /tmp/dtrack.dump dtrack`
+- `pg_dump -U admin -Fc --exclude-schema cyanaudit --exclude-schema dbmate --data-only -f /tmp/dtrack.dump dtrack`
 - `mkdir -p /tmp/cyanaudit && /opt/cyanaudit/tools/cyanaudit_dump.pl -h localhost -U postgres -d dtrack /tmp/cyanaudit/`
 - `exit`
 - `TODAY="$(date --iso)"`

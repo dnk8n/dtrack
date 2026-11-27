@@ -14,7 +14,7 @@ the database (details in [architecture.md](../architecture.md#identity-roles-and
 | `basic` | Automatically, the first time they sign in | Logging their own time; seeing the projects and teams they belong to |
 | `pm` | Automatically, when they are made lead of a project | Managing their projects: members, areas of work, activities, details; seeing the people on their projects |
 | `lead` | Automatically, when they lead an area-of-expertise team | Seeing and correcting their team members' time (time visibility follows teams, not projects) |
-| `power` | `POSTGRES_USER_APP_POWER` at `initdb`, or granted by another power user (Employees screen, `is_power`) | Administration. Bypasses row-level security: sees and can change everything |
+| `power` | `./power-user.sh <UPN>` once for the first administrator, or granted by another power user (Employees screen, `is_power`) | Administration. Bypasses row-level security: sees and can change everything |
 
 Treat `power` as an administrator account: use it for the configuration
 below and nothing else. Day-to-day work (project staffing, time entry,
@@ -43,7 +43,7 @@ See #74 for this split.
 
 ## Order of work
 
-1. **Administrator signs in** as the power user (`POSTGRES_USER_APP_POWER`).
+1. **Administrator signs in** as the power user (the UPN given to `power-user.sh`).
 2. **Everyone else signs in once.** Onboarding creates each of them as
    `basic`. There is no invitation step; anyone in the tenant can sign in.
    (The power user can also create employees on the Employees screen.)

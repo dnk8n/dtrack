@@ -18,7 +18,7 @@ schema names a tenant or an email domain (see
 | --- | --- | --- |
 | `AZURE_TENANT_ID` | Directory (tenant) ID, a GUID | App registration → *Overview* |
 | `AZURE_CLIENT_ID` | Application (client) ID, a GUID | App registration → *Overview* |
-| `POSTGRES_USER_APP_POWER` | The first power user, exactly as Entra puts it in the ID token's `preferred_username` claim (the user principal name, UPN) | User → *Overview* → *User principal name* |
+| `POSTGRES_USER_APP_POWER` | Local `.env` only: the first power user, exactly as Entra puts it in the ID token's `preferred_username` claim (the user principal name, UPN). `make initdb` passes it to `power-user.sh`; on a server you pass the UPN to `./power-user.sh` directly | User → *Overview* → *User principal name* |
 
 `keys/jwt-secret` must also hold the tenant's signing keys (JWKS), which
 `./rotate-keys.sh` downloads using `AZURE_TENANT_ID`.
@@ -100,7 +100,7 @@ testing, three users cover every permission tier:
 
 | Example UPN | Tier it proves | How it gets the tier |
 | --- | --- | --- |
-| `app.admin@<domain>` | `power` (sees and manages everyone) | Set as `POSTGRES_USER_APP_POWER` before `initdb` |
+| `app.admin@<domain>` | `power` (sees and manages everyone) | `./power-user.sh app.admin@<domain>` (locally: `POSTGRES_USER_APP_POWER` before `make initdb`) |
 | `first.lead@<domain>` | `pm` + `lead` (sees their project and team members) | Power user makes them a project lead and a team supervisor |
 | `first.member@<domain>` | `basic` (sees only their own time) | Automatic on first sign-in |
 
@@ -121,8 +121,7 @@ day-to-day work as ordinary users.
 
 ## 4. Verify locally (`make dev`)
 
-Host prerequisites are in [development.md](../development.md); note that
-`initdb.sh` needs `envsubst` (`brew install gettext` on macOS).
+Host prerequisites are in [development.md](../development.md).
 
 ```sh
 # 1. Set AZURE_TENANT_ID, AZURE_CLIENT_ID, POSTGRES_USER_APP_POWER
@@ -147,7 +146,7 @@ tenant state), go through this checklist:
       The first API call fails with "role does not exist", the UI calls
       `/rpc/onboard` and retries, and the user lands as `basic`. Do the same
       for the lead.
-- [ ] **Roles are right.** `docker compose exec postgres psql -U postgres -d <POSTGRES_DB_APP> -c 'SELECT * FROM auth.get_user_roles();'`
+- [ ] **Roles are right.** `docker compose exec postgres psql -U postgres -d dtrack -c 'SELECT * FROM auth.get_user_roles();'`
       shows the power user with `power` and the others with `basic`.
 - [ ] **Lead gets promoted.** As power, create a project with the lead as
       lead, and an area-of-expertise team with the lead as supervisor and the
@@ -179,7 +178,9 @@ Demo mode ignores `keys/jwt-secret`, so the JWKS file can stay.
 
 Repeat sections 2 to 4 with the server's values: the server's `HOST`
 redirect URI must be on the app registration, and the server's `.env` holds
-the same three variables. Things specific to a server:
+`AZURE_TENANT_ID` and `AZURE_CLIENT_ID`. Create the first power user once,
+after `./initdb.sh`, with `sudo ./power-user.sh <UPN>` (skip it when you
+restore a backup instead). Things specific to a server:
 
 - With Terraform + Ansible, set them per environment in `terraform.tfvars`
   (`azure_tenant_id`, `azure_client_id`, `postgres_user_app_power`); the
@@ -209,20 +210,14 @@ organisation's real one.
 
 1. Register the app in the new tenant (section 2) with the server's redirect
    URI.
-2. Set the three values in the server's `.env`, run `./rotate-keys.sh`, then
-   recreate the UI and API: `docker compose up -d --force-recreate react-admin postgrest`
+2. Set `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` in the server's `.env`, run
+   `./rotate-keys.sh`, then recreate the UI and API: `docker compose up -d --force-recreate react-admin postgrest`
    (single-server stack). On the Terraform/Ansible stack add `--build`, since
    its UI image bakes the IDs in.
 3. **Existing data.** Users are Postgres roles named after their UPN in the
    tenant they signed in with. Users from the new tenant have different UPNs
-   and onboard as new, empty `basic` users. `POSTGRES_USER_APP_POWER` is only
-   applied by `initdb`; on an existing database, create and promote the power
-   user yourself (as the app admin):
-
-   ```sql
-   SELECT auth.create_user('first.last@<new-domain>');
-   SELECT auth.grant_power('first.last@<new-domain>');
-   ```
+   and onboard as new, empty `basic` users. Create and promote the new power
+   user with `./power-user.sh first.last@<new-domain>`.
 
    If you restore a production backup instead, the backup's users and roles
    come with it (see [backup-restore.md](backup-restore.md)).
@@ -238,5 +233,5 @@ organisation's real one.
 | `AADSTS50058` in the Entra/Azure portal itself | The portal's own background sign-in. Sign out fully, open a private window, go to `https://entra.microsoft.com/<domain>.onmicrosoft.com`. |
 | "Tenant '…' not found" | Wrong tenant ID or domain, or the tenant no longer exists. Check with the `curl` above. |
 | Sign-in works but the app offers to log out, and the user never appears | Onboarding failed. Check `docker compose logs postgres` for errors from `api.onboard` or `auth.decode_id_token` (no outbound HTTPS, wrong `AZURE_CLIENT_ID`, or tenant domain instead of GUID). Builds before the #70 fix fail here with `relation "users" does not exist`. |
-| Power user signs in but has no power | `POSTGRES_USER_APP_POWER` didn't match the UPN exactly (case), or the database was initialised before you set it. Fix with the SQL in section 6. |
+| Power user signs in but has no power | The email given to `power-user.sh` (locally: `POSTGRES_USER_APP_POWER`) didn't match the UPN exactly (case). Run `./power-user.sh <exact UPN>`. |
 | API returns `JWSError`/`JWT invalid` | `keys/jwt-secret` doesn't hold this tenant's keys. Run `./rotate-keys.sh` and recreate postgrest. |

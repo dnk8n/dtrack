@@ -96,7 +96,7 @@ anon < basic < pm ─┐
         basic < lead ─┴─< power  ( power BYPASSRLS; admin is member of power )
 ```
 
-- `authenticator` (`$POSTGRES_USER_APP`) is the only login role PostgREST
+- `authenticator` is the only login role PostgREST
   uses; it can `SET ROLE` to any user role.
 - PostgREST maps JWT claim `preferred_username` (an email) to the role —
   `PGRST_JWT_ROLE_CLAIM_KEY=.preferred_username`.
@@ -109,7 +109,7 @@ anon < basic < pm ─┐
   `revoke_power`) — executable only by `power` (except `create_user`-via-
   `api.onboard`, see below).
 
-**Row-level security** (see [014.schema.policies.sql](../dtrack/db/sql/002.postgres_user_app_admin.postgres_db_app/014.schema.policies.sql))
+**Row-level security** (see [014.schema.policies.sql](../dtrack/db/migrations/20261127000000_baseline.sql), section `014.schema.policies.sql`)
 enforces, roughly:
 
 - `time_trackings`: you see/write your own rows, plus rows of members you lead.
@@ -151,27 +151,48 @@ tokens and does not work in demo mode; demo users must already exist
 
 [Cyanaudit](https://bitbucket.org/neadwerx/cyanaudit) records every column
 change (who/what/when/old/new) in the `cyanaudit` schema. It is compiled into
-the postgres image, installed by `001.../000.install.cyanaudit.sh`, and
-activated for all schemas by `098.activate.cyanaudit.sql`. `admin.*` functions
+the postgres image, installed by the bootstrap
+(`dtrack/db/bootstrap/02.install-cyanaudit.sh`) and activated for the
+application schemas at the end of the baseline migration. Its event trigger
+adds new tables and columns in those schemas automatically. `admin.*` functions
 expose transaction history. Backups dump cyanaudit separately
 (`cyanaudit_dump.pl` / `cyanaudit_restore.pl`).
 
-## Database bootstrap (initdb.sh)
+## Database bootstrap and migrations
 
-There are no migrations. [initdb.sh](../initdb.sh) executes every `.sql`/`.sh`
-file under `dtrack/db/sql/` in lexicographic order, inside the running
-`postgres` container. Directory names encode the executing identity:
+[initdb.sh](../initdb.sh) brings the database up to date and is safe to run
+at any time. Nothing in the SQL is templated: the role and database names are
+fixed (`authenticator`, `admin`, `dtrack`), and the only secrets are passed
+to psql as variables.
 
 ```
-dtrack/db/sql/<NNN>.<user-env-var>.<db-env-var>/
-  000.postgres_user.postgres_db/         # as superuser on the default DB: create role + DB
-  001.postgres_user.postgres_db_app/     # as superuser on dtrack: extensions, roles, cyanaudit
-  002.postgres_user_app_admin.postgres_db_app/  # as app admin on dtrack: everything else
+dtrack/db/
+  bootstrap/        # superuser, once per new cluster (no `dtrack` database yet)
+    01.create-db.sql        on the maintenance DB: admin role, dtrack database
+    02.install-cyanaudit.sh on dtrack: cyanaudit
+    03.roles.sql            on dtrack: group roles, authenticator, auth schema
+    04.auth-mgmt.sql        on dtrack: plpython3u and superuser-owned auth.* functions
+  set-passwords.sql # superuser, every run: admin + authenticator passwords from .env
+  migrations/       # dbmate, as admin, every run: pending migrations in order
+    20261127000000_baseline.sql   the whole schema as of the move to dbmate (#47)
+  power-user.sql    # only via ./power-user.sh, never by initdb.sh
 ```
 
-Files are piped through `envsubst`, so `$POSTGRES_USER_APP`-style variables in
-SQL resolve from `.env`. Schema changes are deployed by dump → recreate →
-restore (see [runbooks/backup-restore.md](runbooks/backup-restore.md)).
+Migrations run through the compose `migrate` service
+([dbmate](https://github.com/amacneil/dbmate)), connecting as `admin`, so
+everything they create is owned by `admin` exactly as before. dbmate records
+applied versions in `dbmate.schema_migrations` and runs each migration in a
+transaction. Migrations are forward-only: never edit one that has been
+merged; write a new one (see [development.md](development.md#database-changes)).
+Anything that needs the superuser (a new untrusted-language function, a
+change to the `auth.*` role-management functions) cannot run as a migration
+and has to be done by hand on each server, so keep it rare.
+
+`initdb.sh` never creates a power user, so a restored database never collides
+with one. [power-user.sh](../power-user.sh) does that explicitly, once per new
+tenant. Backups leave out the `dbmate` schema; restores load data into a
+database that `initdb.sh` has already migrated (see
+[runbooks/backup-restore.md](runbooks/backup-restore.md)).
 
 ## Front end
 

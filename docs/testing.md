@@ -66,7 +66,8 @@ Notes:
   need to be running.
 - **Every runner recreates its environment from the ground up** — tear down
   the suite's previous environment (containers + volume), bootstrap the
-  fresh cluster with the real `initdb.sh`, start the services that suite
+  fresh cluster with the real `initdb.sh` (bootstrap + every migration) and
+  `power-user.sh`, start the services that suite
   needs ([tests/lib.sh](../tests/lib.sh)). When the run ends the containers
   are **stopped, not removed**: `make test-inspect-<suite>` brings the
   environment back for post-mortem or debugging — it never reruns tests,
@@ -105,9 +106,9 @@ expected-fail test that will flip when it is fixed.
 
 | Test case | Defect | Root cause |
 | --- | --- | --- |
-| TC-RLS-012 / TC-PROJ-105 | Any project member can update the project (name, dates, description) | `select_projects_policy` on `internal.projects` was created without `FOR SELECT`, making it a permissive `FOR ALL` policy whose USING clause also authorizes UPDATE/DELETE ([014.schema.policies.sql](../dtrack/db/sql/002.postgres_user_app_admin.postgres_db_app/014.schema.policies.sql)) |
-| TC-EMP-106 | Employees cannot edit their own profile (403) although `update_users_policy` intends self-updates | `internal.employees_upsert` writes via `INSERT … ON CONFLICT DO UPDATE`, and only `power` has INSERT on `auth.users` ([015.schema.employees.sql](../dtrack/db/sql/002.postgres_user_app_admin.postgres_db_app/015.schema.employees.sql)) |
-| TC-SEC-001 | `basic` can execute `internal.aoe_teams_grant_or_revoke_privs`, a SECURITY DEFINER function that grants/revokes the `lead` role | Explicit `GRANT EXECUTE … TO basic`, flagged `TODO: This is potentially insecure, fix` in [013.project_aoe_functions.sql](../dtrack/db/sql/002.postgres_user_app_admin.postgres_db_app/013.project_aoe_functions.sql) |
+| TC-RLS-012 / TC-PROJ-105 | Any project member can update the project (name, dates, description) | `select_projects_policy` on `internal.projects` was created without `FOR SELECT`, making it a permissive `FOR ALL` policy whose USING clause also authorizes UPDATE/DELETE ([014.schema.policies.sql](../dtrack/db/migrations/20261127000000_baseline.sql), section `014.schema.policies.sql`) |
+| TC-EMP-106 | Employees cannot edit their own profile (403) although `update_users_policy` intends self-updates | `internal.employees_upsert` writes via `INSERT … ON CONFLICT DO UPDATE`, and only `power` has INSERT on `auth.users` ([015.schema.employees.sql](../dtrack/db/migrations/20261127000000_baseline.sql), section `015.schema.employees.sql`) |
+| TC-SEC-001 | `basic` can execute `internal.aoe_teams_grant_or_revoke_privs`, a SECURITY DEFINER function that grants/revokes the `lead` role | Explicit `GRANT EXECUTE … TO basic`, flagged `TODO: This is potentially insecure, fix` in [013.project_aoe_functions.sql](../dtrack/db/migrations/20261127000000_baseline.sql), section `013.project_aoe_functions.sql` |
 
 Worth knowing, but pinned as current behavior rather than xfail: `Prefer:
 return=representation` returns null generated ids because the INSTEAD OF
