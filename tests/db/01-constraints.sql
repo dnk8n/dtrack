@@ -5,7 +5,7 @@ BEGIN;
 SELECT plan(9);
 
 -- Fixture: one user and the reference rows a time tracking needs
-SELECT auth.create_user('fixture.user@hellodnk8n.onmicrosoft.com');
+SELECT auth.create_user('fixture.user@example.com');
 INSERT INTO internal.activities (name) VALUES ('fixture activity');
 INSERT INTO internal.areas_of_work (name) VALUES ('fixture aow');
 INSERT INTO internal.projects (name) VALUES ('fixture project');
@@ -43,7 +43,7 @@ SELECT is('7.50 hrs'::interval, '450 minutes'::interval,
     'TC-TT-003: "7.50 hrs" parses as 7.5 hours');
 
 -- TC-TEAM-001: a member cannot belong to two teams within one area of expertise
-SELECT auth.create_user('fixture.lead2@hellodnk8n.onmicrosoft.com');
+SELECT auth.create_user('fixture.lead2@example.com');
 INSERT INTO internal.areas_of_expertise (name) VALUES ('fixture aoe');
 INSERT INTO internal.aoe_hierarchies (aoe_id, lead_id, member_id)
 SELECT aoe_id,

@@ -53,8 +53,10 @@ journeys. A journey may be implemented as several serial specs
 | TC-EMP-001 | `auth.create_user` creates a NOLOGIN role, grants `basic`, inserts the users row, derives the username from the email | automated |
 | TC-EMP-002 | `auth.create_user` upserts: re-creating an existing username updates profile fields without duplicating rows | automated |
 | TC-EMP-003 | First/last name default from the dotted email local part | automated |
-| TC-EMP-004 | `auth.del_user` rejects emails outside the allowed domain | automated |
-| TC-EMP-005 | `auth.del_user` drops the role and deletes the users row for the allowed domain | automated |
+| TC-EMP-004 | `auth.del_user` rejects anything that is not an application user (unknown emails, system roles such as `power`) | automated |
+| TC-EMP-005 | `auth.del_user` drops the role and deletes the users row of an application user | automated |
+| TC-EMP-006 | An employee created without an email gets the creating user's email domain | automated |
+| TC-EMP-007 | Creating an employee with no email and no caller domain to derive raises an error | automated |
 | TC-EMP-101 | A power user can create an employee through `POST /employees` | automated |
 | TC-EMP-102 | A newly created employee can authenticate and see themself | automated |
 | TC-EMP-103 | A basic user cannot create employees | automated |

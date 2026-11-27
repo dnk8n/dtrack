@@ -26,6 +26,7 @@ export const debugAuthProvider = {
       const employeeProfile = await getCachedEmployeeProfile();
       return Promise.resolve({
         id: employeeProfile?.id,
+        email: employeeProfile?.email,
         fullName: employeeProfile?.fullName,
       });
     } catch (error) {

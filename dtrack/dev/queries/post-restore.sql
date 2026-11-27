@@ -25,7 +25,7 @@ FROM
         api.employees
       WHERE
         roles IS NULL
-        AND email LIKE '%@hellodnk8n.onmicrosoft.com'
+        AND email LIKE '%@%'
     )
   ) AS t (email);
 

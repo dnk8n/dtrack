@@ -4,13 +4,13 @@ BEGIN;
 
 SELECT plan(8);
 
-SELECT auth.create_user('auto.lead@hellodnk8n.onmicrosoft.com');
-SELECT auth.create_user('auto.member@hellodnk8n.onmicrosoft.com');
-SELECT auth.create_user('auto.power@hellodnk8n.onmicrosoft.com');
-SELECT auth.grant_power('auto.power@hellodnk8n.onmicrosoft.com');
+SELECT auth.create_user('auto.lead@example.com');
+SELECT auth.create_user('auto.member@example.com');
+SELECT auth.create_user('auto.power@example.com');
+SELECT auth.grant_power('auto.power@example.com');
 INSERT INTO internal.areas_of_expertise (name) VALUES ('auto aoe');
 
-SET ROLE "auto.power@hellodnk8n.onmicrosoft.com";
+SET ROLE "auto.power@example.com";
 
 ---------------------------------------------------------------
 -- Projects: lead_ids drive the pm role
@@ -30,7 +30,7 @@ SELECT results_eq(
       JOIN internal.projects p USING (project_id) WHERE p.name = 'auto project'$$,
     $$VALUES (2)$$,
     'TC-PROJ-001: lead and member membership rows created');
-SELECT is_member_of('pm', 'auto.lead@hellodnk8n.onmicrosoft.com',
+SELECT is_member_of('pm', 'auto.lead@example.com',
     'TC-PROJ-001: project lead was granted pm');
 
 -- TC-PROJ-002: removing the lead revokes pm (when they lead nothing else)
@@ -39,7 +39,7 @@ SET lead_ids = '[]'::jsonb
 WHERE id = (SELECT project_id FROM internal.projects WHERE name = 'auto project');
 
 SELECT ok(
-    NOT pg_has_role('auto.lead@hellodnk8n.onmicrosoft.com', 'pm', 'MEMBER'),
+    NOT pg_has_role('auto.lead@example.com', 'pm', 'MEMBER'),
     'TC-PROJ-002: pm revoked after removal as lead');
 
 ---------------------------------------------------------------
@@ -57,7 +57,7 @@ SELECT results_eq(
       JOIN internal.areas_of_expertise aoe USING (aoe_id) WHERE aoe.name = 'auto aoe'$$,
     $$VALUES (1)$$,
     'TC-TEAM-010: hierarchy row created');
-SELECT is_member_of('lead', 'auto.lead@hellodnk8n.onmicrosoft.com',
+SELECT is_member_of('lead', 'auto.lead@example.com',
     'TC-TEAM-010: team supervisor was granted lead');
 
 -- TC-TEAM-011: deleting the team (as power) removes it and revokes lead
@@ -70,7 +70,7 @@ SELECT is_empty(
       JOIN internal.areas_of_expertise aoe USING (aoe_id) WHERE aoe.name = 'auto aoe'$$,
     'TC-TEAM-011: hierarchy rows removed by power delete');
 SELECT ok(
-    NOT pg_has_role('auto.lead@hellodnk8n.onmicrosoft.com', 'lead', 'MEMBER'),
+    NOT pg_has_role('auto.lead@example.com', 'lead', 'MEMBER'),
     'TC-TEAM-011: lead revoked after team deletion');
 
 RESET ROLE;

@@ -7,11 +7,11 @@ SELECT plan(19);
 
 -- Fixture personas: a team lead, their team member, an unrelated outsider,
 -- and a power user. Everything rolls back at the end.
-SELECT auth.create_user('rls.lead@hellodnk8n.onmicrosoft.com');
-SELECT auth.create_user('rls.member@hellodnk8n.onmicrosoft.com');
-SELECT auth.create_user('rls.outsider@hellodnk8n.onmicrosoft.com');
-SELECT auth.create_user('rls.power@hellodnk8n.onmicrosoft.com');
-SELECT auth.grant_power('rls.power@hellodnk8n.onmicrosoft.com');
+SELECT auth.create_user('rls.lead@example.com');
+SELECT auth.create_user('rls.member@example.com');
+SELECT auth.create_user('rls.outsider@example.com');
+SELECT auth.create_user('rls.power@example.com');
+SELECT auth.grant_power('rls.power@example.com');
 
 INSERT INTO internal.areas_of_expertise (name) VALUES ('rls aoe');
 INSERT INTO internal.aoe_hierarchies (aoe_id, lead_id, member_id)
@@ -45,7 +45,7 @@ VALUES ('rls published?', 'yes', TRUE), ('rls draft?', 'no', FALSE);
 ---------------------------------------------------------------
 -- Time trackings
 ---------------------------------------------------------------
-SET ROLE "rls.member@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.member@example.com";
 
 -- TC-RLS-001: members see only their own time trackings
 SELECT results_eq(
@@ -57,7 +57,7 @@ SELECT results_eq(
 SELECT throws_ok($$
     INSERT INTO internal.time_trackings (date, duration, user_id, project_id, activity_id, aow_id)
     SELECT CURRENT_DATE, '15 minutes',
-        (SELECT user_id FROM auth.users WHERE email = 'rls.lead@hellodnk8n.onmicrosoft.com'),
+        (SELECT user_id FROM auth.users WHERE email = 'rls.lead@example.com'),
         (SELECT project_id FROM internal.projects WHERE name = 'rls project'),
         (SELECT activity_id FROM internal.activities WHERE name = 'rls activity'),
         (SELECT aow_id FROM internal.areas_of_work WHERE name = 'rls aow')
@@ -80,7 +80,7 @@ SELECT results_eq(
     'TC-RLS-003: "0.25 hrs" stored as 15 minutes');
 
 RESET ROLE;
-SET ROLE "rls.lead@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.lead@example.com";
 
 -- TC-RLS-004: team leads see their members' time trackings
 SELECT results_eq(
@@ -92,7 +92,7 @@ SELECT results_eq(
 SELECT lives_ok($$
     INSERT INTO internal.time_trackings (description, date, duration, user_id, project_id, activity_id, aow_id)
     SELECT 'rls entry by lead for member', CURRENT_DATE, '15 minutes',
-        (SELECT user_id FROM auth.users WHERE email = 'rls.member@hellodnk8n.onmicrosoft.com'),
+        (SELECT user_id FROM auth.users WHERE email = 'rls.member@example.com'),
         (SELECT project_id FROM internal.projects WHERE name = 'rls project'),
         (SELECT activity_id FROM internal.activities WHERE name = 'rls activity'),
         (SELECT aow_id FROM internal.areas_of_work WHERE name = 'rls aow')
@@ -100,7 +100,7 @@ SELECT lives_ok($$
     'TC-RLS-005: lead inserts entry for member');
 
 RESET ROLE;
-SET ROLE "rls.outsider@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.outsider@example.com";
 
 -- TC-RLS-006: outsiders see nothing of others' data
 SELECT is_empty(
@@ -116,7 +116,7 @@ SELECT is_empty(
     'TC-RLS-010: outsider cannot see project');
 
 RESET ROLE;
-SET ROLE "rls.member@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.member@example.com";
 
 -- TC-RLS-011: members see their project
 SELECT isnt_empty(
@@ -124,7 +124,7 @@ SELECT isnt_empty(
     'TC-RLS-011: member sees own project');
 
 RESET ROLE;
-SET ROLE "rls.lead@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.lead@example.com";
 
 -- TC-RLS-013: project leads can update their project
 UPDATE internal.projects SET description = 'updated by lead' WHERE name = 'rls project';
@@ -140,7 +140,7 @@ SELECT throws_ok(
     'TC-RLS-014: lead cannot create an unrelated new project');
 
 RESET ROLE;
-SET ROLE "rls.member@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.member@example.com";
 
 -- TC-RLS-012: non-lead members should not be able to update the project.
 -- KNOWN BUG (expected failure): select_projects_policy is created without
@@ -157,7 +157,7 @@ SELECT is_empty(
 ---------------------------------------------------------------
 -- Reference data (activities / areas of work)
 ---------------------------------------------------------------
-SET ROLE "rls.member@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.member@example.com";
 
 -- TC-RLS-020: reference data is read-only for non-power users
 SELECT throws_ok(
@@ -170,7 +170,7 @@ SELECT throws_ok(
     'TC-RLS-020: basic cannot create activities');
 
 RESET ROLE;
-SET ROLE "rls.power@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.power@example.com";
 
 -- TC-RLS-021: power users manage reference data
 SELECT lives_ok(
@@ -181,21 +181,21 @@ SELECT lives_ok(
 -- Users
 ---------------------------------------------------------------
 RESET ROLE;
-SET ROLE "rls.outsider@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.outsider@example.com";
 
 -- TC-RLS-030: unrelated users see only themselves in auth.users
 SELECT results_eq(
     $$SELECT email FROM auth.users WHERE email LIKE 'rls.%'$$,
-    $$VALUES ('rls.outsider@hellodnk8n.onmicrosoft.com'::text)$$,
+    $$VALUES ('rls.outsider@example.com'::text)$$,
     'TC-RLS-030: outsider sees only self');
 
 RESET ROLE;
-SET ROLE "rls.member@hellodnk8n.onmicrosoft.com";
+SET ROLE "rls.member@example.com";
 
 -- TC-RLS-031: members also see their team lead (and vice versa)
 SELECT results_eq(
     $$SELECT count(*)::int FROM auth.users WHERE email IN
-      ('rls.member@hellodnk8n.onmicrosoft.com', 'rls.lead@hellodnk8n.onmicrosoft.com')$$,
+      ('rls.member@example.com', 'rls.lead@example.com')$$,
     $$VALUES (2)$$,
     'TC-RLS-031: member sees self and their lead');
 

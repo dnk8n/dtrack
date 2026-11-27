@@ -211,9 +211,10 @@ are cosmetic; real enforcement is RLS in the database.
 These flow from the design and are useful context when writing tests
 (they are *not* an invitation to change application code right now):
 
-- `auth.del_user` only accepts emails matching the hardcoded
-  `@hellodnk8n.onmicrosoft.com` domain; `internal.employees_upsert` likewise
-  defaults new emails to that domain.
+- No tenant email domain is configured anywhere. `auth.del_user` only drops
+  roles that belong to an application user (a row in `auth.users`), and
+  `internal.employees_upsert` gives an employee created without an email the
+  creating user's own domain (`current_user` is that user's email).
 - `internal.aoe_teams_grant_or_revoke_privs` is SECURITY DEFINER and executable
   by `basic` (flagged `TODO: potentially insecure` in the source).
 - The FAQ RLS policy hides unpublished rows from everyone, including their

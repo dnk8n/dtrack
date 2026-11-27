@@ -17,8 +17,11 @@ const JWT_SECRET =
 export const POWER_EMAIL =
   process.env.DTRACK_TEST_POWER_EMAIL ?? 'Dummy.User@example.com';
 
-/** The only domain auth.del_user accepts; test personas live here. */
-export const TEST_DOMAIN = 'hellodnk8n.onmicrosoft.com';
+/**
+ * Personas created through POST /employees without an email inherit the
+ * creating (power) user's domain (internal.employees_upsert).
+ */
+export const TEST_DOMAIN = POWER_EMAIL.split('@')[1];
 
 /** Unique per test run, so run-scoped entities never collide with residue. */
 export const runId = Date.now().toString(36);

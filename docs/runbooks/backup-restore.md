@@ -100,7 +100,7 @@ $$ LANGUAGE plpgsql;
 --- Recreate users
 SELECT auth.create_user(email)
 FROM unnest(
-    (SELECT array_agg(email) FROM api.employees WHERE roles IS NULL AND email LIKE '%@hellodnk8n.onmicrosoft.com')
+    (SELECT array_agg(email) FROM api.employees WHERE roles IS NULL AND email LIKE '%@%')
 ) AS t(email);
 --- Reassign PM role if applicable
 DO $$

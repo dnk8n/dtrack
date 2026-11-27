@@ -38,13 +38,14 @@ EXECUTE ON FUNCTION auth.create_user TO power;
 CREATE
 OR REPLACE FUNCTION auth.del_user (email text) RETURNS void SECURITY DEFINER AS $$
 BEGIN
-    -- TODO: Think of a better, more generic way to sanitize text
-    --       Need to be careful of SQL injection
-    IF email ~ '^[^@]+@hellodnk8n\.onmicrosoft\.com$' THEN
+    -- Only application users (rows in auth.users) may be dropped, so this can
+    -- never remove a system role such as power, basic or the authenticator.
+    -- format(%I) quotes the identifier, so no further sanitising is needed.
+    IF EXISTS (SELECT 1 FROM auth.users u WHERE u.email = del_user.email) THEN
         EXECUTE format('DROP ROLE IF EXISTS %I', email);
         EXECUTE 'DELETE FROM auth.users WHERE email = $1' USING email;
     ELSE
-        RAISE EXCEPTION 'Invalid email format: %', email;
+        RAISE EXCEPTION 'Not an application user: %', email;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
