@@ -57,6 +57,20 @@ jobs:
       - name: Check test case ids are documented
         run: ./tests/check-test-case-ids.sh
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci
+
+      - name: Type-check tests
+        working-directory: tests
+        run: npx tsc --noEmit
+
   stack-tests:
     # Each runner recreates the isolated test environment (own compose
     # project, cluster and ports) from the ground up; the dev stack is not

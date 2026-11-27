@@ -83,7 +83,8 @@ Notes:
 push to main:
 
 - **lint** — UI type-check, eslint and prettier in check mode (no fixes),
-  pre-commit hooks (whitespace, shellcheck, terraform), test-case-id check.
+  pre-commit hooks (whitespace, shellcheck, terraform, actionlint),
+  test-case-id check, `tsc --noEmit` on `tests/`.
 - **stack-tests** — `tests/run-all.sh`, exactly as locally: all three suites
   in parallel, each recreating its isolated environment; the dev stack is
   not started in CI at all. On failure it uploads the per-suite logs, the
