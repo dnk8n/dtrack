@@ -4,7 +4,7 @@
 #
 # Each suite runs in its own isolated environment: a compose project per
 # suite (own postgres cluster, PostgREST and UI on their own host ports)
-# built from the same compose files as dev/debug plus
+# built from the same compose files as dev/demo plus
 # config/docker-compose.overrides/test.yaml — so the suites can run in
 # parallel without contact, next to the dev stack. Every runner invocation
 # tears its previous environment down and recreates it from the ground up
@@ -40,7 +40,7 @@ esac
 export TEST_PG_PORT TEST_API_PORT TEST_UI_PORT
 
 export COMPOSE_PROJECT_NAME="dtrack-test-${TEST_SUITE}"
-export COMPOSE_FILE="docker-compose.yaml:config/docker-compose.overrides/dev.yaml:config/docker-compose.overrides/debug.yaml:config/docker-compose.overrides/test.yaml"
+export COMPOSE_FILE="docker-compose.yaml:config/docker-compose.overrides/dev.yaml:config/docker-compose.overrides/demo.yaml:config/docker-compose.overrides/test.yaml"
 
 # Where the suites reach their test stack (helpers.ts / playwright.config.ts
 # read the same variables).

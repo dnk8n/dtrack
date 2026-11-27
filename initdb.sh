@@ -10,7 +10,7 @@
 # verbose statement logging; deployed servers must run without it.
 #
 # Respects COMPOSE_FILE, so `make initdb` targets the same compose
-# configuration as `make debug`. Called bare (as on deployed servers) it uses
+# configuration as `make demo`. Called bare (as on deployed servers) it uses
 # the default compose file resolution.
 set -euo pipefail
 cd "$(dirname "$0")"

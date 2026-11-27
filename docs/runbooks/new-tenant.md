@@ -6,7 +6,7 @@ and then repeat it on a server. It also covers switching an existing
 deployment from a test tenant to the real one.
 
 Read [development.md](../development.md) first if you have never run DTrack
-locally: this runbook assumes `make setup` already works for you in debug mode.
+locally: this runbook assumes `make setup` already works for you in demo mode.
 
 ## What DTrack needs from Entra ID
 
@@ -172,8 +172,8 @@ Running the automated tests while `.env` holds real tenant values fails,
 because the suites expect the dummy power user (#71). Until that's fixed,
 put the template values from `.env.tpl` back for the test run.
 
-To return to debug mode: `make debug` and clear localhost site data again.
-Debug mode ignores `keys/jwt-secret`, so the JWKS file can stay.
+To return to demo mode: `make demo` and clear localhost site data again.
+Demo mode ignores `keys/jwt-secret`, so the JWKS file can stay.
 
 ## 5. Repeat on a server
 
@@ -186,7 +186,7 @@ the same three variables. Things specific to a server:
   playbook writes them into the server's `.env`. On a hand-built server, edit
   `.env` directly (see [deployment.md](../deployment.md#single-server-deploy-pull-based)).
 - Only the `prod` compose override signs in through Entra ID. The Terraform
-  `staging` environment uses `staging-debug`, which has the debug login and
+  `staging` environment uses `staging-demo`, which has the demo login and
   ignores these values.
 
 - With the single-server stack, the published UI image reads the tenant ID,

@@ -17,25 +17,29 @@ colima start --cpu 4 --memory 8
 ## One-time setup
 
 ```sh
-make env    # .env from .env.tpl, keys/jwt-secret with the debug secret
+make env    # .env from .env.tpl, keys/jwt-secret with the demo secret
 ```
 
 `make env` never overwrites existing files. The `.env` template's dummy
-values work as-is for local debug mode. The `keys/jwt-secret` file must exist
+values work as-is for local demo mode. The `keys/jwt-secret` file must exist
 **as a file** before the first `docker compose up` — if compose creates the
 bind-mount path for you, it will be a directory and PostgREST will fail to
-read it (delete it and recreate as a file). In debug mode its content is
-unused (the debug compose override injects the shared HS256 secret), but the
+read it (delete it and recreate as a file). In demo mode its content is
+unused (the demo compose override injects the shared HS256 secret), but the
 mount must still resolve.
 
 ## Two modes
 
-| | `make dev` | `make debug` |
+| | `make dev` | `make demo` |
 | --- | --- | --- |
 | Login | Real Azure AD via MSAL | Local form; browser signs an HS256 JWT itself |
 | Requires | Azure tenant + app registration, real `AZURE_*` values in `.env`, JWKS in `keys/jwt-secret` | Nothing external |
 | Onboarding (`/rpc/onboard`) | Works (validates Azure id tokens in-database) | **Does not work** — create users via the Employees screen instead |
-| Use for | Verifying the real auth path | Day-to-day development and automated tests |
+| Use for | Verifying the real auth path | Day-to-day development, presenting features, automated tests |
+
+Demo mode is never for a live server: its signing secret is public, so anyone
+could sign in as anyone. The only acceptable hosted use is a throwaway public
+demo with no real data (e.g. rebuilt from scratch daily).
 
 To use `make dev`, follow [runbooks/new-tenant.md](runbooks/new-tenant.md)
 (app registration with redirect URI `http://localhost:5174/auth-callback`,
@@ -43,17 +47,17 @@ the three `AZURE_*`/power-user values in `.env`, `./rotate-keys.sh`, then a
 fresh `make initdb`).
 
 Both modes use the `dev` compose override (published ports, verbose PostgREST).
-Switching between them: rebuild (`make dev` / `make debug` handle this) **and
-clear the browser's storage for localhost** — MSAL and the debug provider
+Switching between them: rebuild (`make dev` / `make demo` handle this) **and
+clear the browser's storage for localhost** — MSAL and the demo provider
 cache different state and will confuse each other.
 
 ## Start, bootstrap, use
 
 ```sh
-make setup     # = make env + make initdb + make debug
+make setup     # = make env + make initdb + make demo
 ```
 
-Or step by step: `make initdb` then `make debug` (or `make dev`).
+Or step by step: `make initdb` then `make demo` (or `make dev`).
 
 `make initdb` builds and starts postgres if needed, waits for readiness, then
 executes all of `dtrack/db/sql/` in order (see
@@ -64,7 +68,7 @@ exists it is a no-op. `./initdb.sh --force` recreates everything from scratch
 `make setup`.
 
 Use `make initdb` rather than calling `./initdb.sh` directly: the make target
-exports the dev/debug compose file set, so postgres keeps its published port
+exports the dev/demo compose file set, so postgres keeps its published port
 and dev mounts, and passes `--dev-logging`, which turns on verbose statement
 logging (`log_statement = 'all'`). Called bare (as on deployed servers) the
 script falls back to default compose file resolution and leaves logging at
@@ -73,7 +77,7 @@ and is strictly a development convenience.
 
 | URL | What |
 | --- | --- |
-| <http://localhost:5174> | UI (log in as `Dummy.User@example.com` in debug mode) |
+| <http://localhost:5174> | UI (log in as `Dummy.User@example.com` in demo mode) |
 | <http://localhost:3000> | PostgREST API |
 | <http://localhost:8080> | Swagger UI |
 | `localhost:5432` | Postgres (`psql -h localhost -U admin -d dtrack`, password from `.env`) |
@@ -81,7 +85,7 @@ and is strictly a development convenience.
 The initial power user is `$POSTGRES_USER_APP_POWER` from `.env`
 (`Dummy.User@example.com` by default). Create further users through the
 Employees screen while logged in as the power user, then log in as them —
-debug mode can impersonate any *existing* user.
+demo mode can impersonate any *existing* user.
 
 ## Demo data
 
@@ -114,12 +118,12 @@ running. See [testing.md](testing.md).
 
 ### Calling the API directly
 
-Any HS256 JWT signed with the debug secret works against PostgREST in debug
+Any HS256 JWT signed with the demo secret works against PostgREST in demo
 mode. For example, with [jwt-cli](https://github.com/mike-engel/jwt-cli) or any
 JWT tool:
 
 ```sh
-TOKEN=$(jwt encode --secret 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' '{"preferred_username":"Dummy.User@example.com"}')
+TOKEN=$(jwt encode --secret 'Dummy5ecr3t4D3m00n1yN0T4Pr0D1234' '{"preferred_username":"Dummy.User@example.com"}')
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/current_employee
 ```
 
@@ -131,11 +135,11 @@ host against the containerized API:
 ```sh
 cd dtrack/ui
 yarn install
-VITE_API_BASE_URI=http://localhost:3000 VITE_APP_BASE_URI=http://localhost:5173 yarn debug
+VITE_API_BASE_URI=http://localhost:3000 VITE_APP_BASE_URI=http://localhost:5173 yarn demo
 ```
 
-`yarn debug` starts the debug-mode stack (if not already up) and then runs
-Vite locally on <http://localhost:5173> with the debug login. `yarn lint`
+`yarn demo` starts the demo-mode stack (if not already up) and then runs
+Vite locally on <http://localhost:5173> with the demo login. `yarn lint`
 formats + lints (this repo pins prettier/eslint via the UI package; a
 pre-commit hook runs lint on commit inside `dtrack/ui`).
 
@@ -144,8 +148,8 @@ pre-commit hook runs lint on commit inside `dtrack/ui`).
 - **PostgREST restarts / "Password authentication failed"** — database not
   initialized yet; run `make initdb`.
 - **UI login succeeds but everything 401s** — stale browser storage after
-  switching dev/debug modes; clear site data for localhost.
-- **`role "…" does not exist` from PostgREST** — you logged in (debug mode) as
+  switching dev/demo modes; clear site data for localhost.
+- **`role "…" does not exist` from PostgREST** — you logged in (demo mode) as
   a user that was never created. Log in as the power user and create the
   employee first.
 - **`keys/jwt-secret` is a directory** — see one-time setup above.

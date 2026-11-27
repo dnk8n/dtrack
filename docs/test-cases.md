@@ -173,7 +173,7 @@ rely on; they must keep working across PostgREST upgrades.
 
 | Id | Test case | Status |
 | --- | --- | --- |
-| TC-E2E-001 | The power user logs in via the debug login, sees the navigation, and can log out | automated |
+| TC-E2E-001 | The power user logs in via the demo login, sees the navigation, and can log out | automated |
 | TC-E2E-002 | An unknown user cannot reach the workspace | automated |
 | TC-E2E-010 | Core journey (serial specs a–e): create AoW → activity → project (linked, with manager) → log time through the cascading selects → entry appears in the list | automated |
 | TC-E2E-020 | The dashboard renders for a user with data | automated |

@@ -4,7 +4,7 @@
  * A production image is built once (in CI) and published publicly, so it
  * carries no tenant, client or host. Its container writes /config.js at start
  * from environment variables (dtrack/ui/40-dtrack-config.sh),
- * which sets window.__DTRACK_CONFIG__ before the app loads. Local dev, debug
+ * which sets window.__DTRACK_CONFIG__ before the app loads. Local dev, demo
  * and test builds still bake the values in as VITE_* build args; those are the
  * fallback when a runtime value is absent.
  */

@@ -1,6 +1,6 @@
-# Isolated test environments. Used together with dev.yaml and debug.yaml
+# Isolated test environments. Used together with dev.yaml and demo.yaml
 # under a separate compose project per suite (see tests/lib.sh), so each test
-# stack matches dev/debug exactly — fresh cluster, same bootstrap — while its
+# stack matches dev/demo exactly — fresh cluster, same bootstrap — while its
 # own containers, volume and host ports let all suites run in parallel,
 # alongside the dev stack, without contact.
 #

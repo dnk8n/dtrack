@@ -8,7 +8,7 @@ RUN yarn
 COPY . ./
 # RUNTIME_CONFIG=true builds the publishable production image: no tenant,
 # client or host is baked in; the container writes /config.js from its
-# environment at start (40-dtrack-config.sh). Otherwise (local dev, debug,
+# environment at start (40-dtrack-config.sh). Otherwise (local dev, demo,
 # tests) the connection settings are required build args.
 ARG RUNTIME_CONFIG=false
 ARG VITE_MSAL_CLIENT_ID
@@ -31,13 +31,13 @@ RUN if [ "$RUNTIME_CONFIG" = "true" ]; then \
   fi
 ARG VITE_PALETTE_PRIMARY
 ARG VITE_PALETTE_SECONDARY
-# BUILD_MODE picks the Vite mode. "debug" loads the committed .env.debug
-# (debug login and its local-only signing secret); "production" never reads
+# BUILD_MODE picks the Vite mode. "demo" loads the committed .env.demo
+# (demo login and its local-only signing secret); "production" never reads
 # that file. No secret is passed as a build arg, so none ends up in the image
 # history or metadata. A runtime-configured (publishable) image is always a
 # production build.
 ARG BUILD_MODE=production
-RUN case "$BUILD_MODE" in production|debug) ;; *) echo "BUILD_MODE must be production or debug"; exit 1;; esac && \
+RUN case "$BUILD_MODE" in production|demo) ;; *) echo "BUILD_MODE must be production or demo"; exit 1;; esac && \
   if [ "$RUNTIME_CONFIG" = "true" ] && [ "$BUILD_MODE" != "production" ]; then \
   echo "RUNTIME_CONFIG=true images must be production builds"; exit 1; \
   fi && \

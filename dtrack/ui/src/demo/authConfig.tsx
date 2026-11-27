@@ -3,23 +3,23 @@ import { EmployeeProfile, getEmployeeProfile } from '../EmployeeProfile';
 let cachedProfile: EmployeeProfile | null = null;
 const getCachedEmployeeProfile = async () => {
   if (cachedProfile) return cachedProfile;
-  const token = localStorage.getItem('debug-token') || undefined;
+  const token = localStorage.getItem('demo-token') || undefined;
   cachedProfile = await getEmployeeProfile(token);
   return cachedProfile;
 };
 
-export const debugAuthProvider = {
+export const demoAuthProvider = {
   async login(token: string) {
-    localStorage.setItem('debug-token', token);
+    localStorage.setItem('demo-token', token);
     return Promise.resolve();
   },
   async logout() {
-    localStorage.removeItem('debug-token');
+    localStorage.removeItem('demo-token');
     cachedProfile = null;
     return Promise.resolve();
   },
   async checkAuth() {
-    return localStorage.getItem('debug-token') ? Promise.resolve() : Promise.reject();
+    return localStorage.getItem('demo-token') ? Promise.resolve() : Promise.reject();
   },
   async getIdentity() {
     try {

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { login, POWER_EMAIL } from './helpers';
 
-test('TC-E2E-001: power user can log in and out via the debug login', async ({
+test('TC-E2E-001: power user can log in and out via the demo login', async ({
   page,
 }) => {
   await login(page, POWER_EMAIL);
@@ -22,7 +22,7 @@ test('TC-E2E-001: power user can log in and out via the debug login', async ({
 test('TC-E2E-002: an unknown user cannot reach the workspace', async ({ page }) => {
   await page.goto('/');
   await page
-    .getByLabel('Enter any username for DEBUG login')
+    .getByLabel('Enter any username for DEMO login')
     .fill('ghost.user@example.com');
   await page.getByRole('button', { name: 'Login as this User' }).click();
 

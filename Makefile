@@ -6,17 +6,17 @@ ANSIBLE_DIR = config/ansible
 # docker compose's native mechanism, and initdb.sh honours it too, so every
 # target below operates on one consistent stack definition.
 COMPOSE_FILES_DEV = docker-compose.yaml:config/docker-compose.overrides/dev.yaml
-COMPOSE_FILES_DEBUG = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/debug.yaml
-COMPOSE_FILES_TEST = $(COMPOSE_FILES_DEBUG):config/docker-compose.overrides/test.yaml
+COMPOSE_FILES_DEMO = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/demo.yaml
+COMPOSE_FILES_TEST = $(COMPOSE_FILES_DEMO):config/docker-compose.overrides/test.yaml
 COMPOSE_DEV = COMPOSE_FILE=$(COMPOSE_FILES_DEV) docker compose
-COMPOSE_DEBUG = COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) docker compose
+COMPOSE_DEMO = COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose
 
 env ?= null
 tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),staging,$(error Invalid environment: $(env))))
 play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
-.PHONY: precommit infra infra-destroy play help env setup dev debug initdb \
+.PHONY: precommit infra infra-destroy play help env setup dev demo initdb \
 	down clean test test-db test-api test-e2e
 
 precommit:
@@ -27,28 +27,28 @@ precommit:
 env:
 	@test -f .env || { cp .env.tpl .env && echo "Created .env from .env.tpl"; }
 	@mkdir -p keys
-	@test -f keys/jwt-secret || printf 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123' > keys/jwt-secret
+	@test -f keys/jwt-secret || printf 'Dummy5ecr3t4D3m00n1yN0T4Pr0D1234' > keys/jwt-secret
 
-# From nothing to a running debug-mode stack with a bootstrapped database.
+# From nothing to a running demo-mode stack with a bootstrapped database.
 setup:
 	$(MAKE) env
 	$(MAKE) initdb
-	$(MAKE) debug
+	$(MAKE) demo
 
 dev:
 	$(COMPOSE_DEV) up -d --build
 
-debug:
-	$(COMPOSE_DEBUG) up -d --build
+demo:
+	$(COMPOSE_DEMO) up -d --build
 
 initdb:
-	COMPOSE_FILE=$(COMPOSE_FILES_DEBUG) ./initdb.sh --dev-logging
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./initdb.sh --dev-logging
 
 down:
-	$(COMPOSE_DEBUG) down
+	$(COMPOSE_DEMO) down
 
 clean:
-	$(COMPOSE_DEBUG) down -v --remove-orphans
+	$(COMPOSE_DEMO) down -v --remove-orphans
 	for suite in db api e2e; do \
 		COMPOSE_PROJECT_NAME=dtrack-test-$$suite \
 		COMPOSE_FILE=$(COMPOSE_FILES_TEST) \
@@ -92,10 +92,10 @@ play:
 
 help:
 	@echo "Available targets:"
-	@echo "  setup          One command from clone to running stack: env + initdb + debug."
+	@echo "  setup          One command from clone to running stack: env + initdb + demo."
 	@echo "  env            Create .env and keys/jwt-secret from templates (never overwrites)."
 	@echo "  dev            Start the local stack in dev mode (real Azure AD login)."
-	@echo "  debug          Start the local stack in debug mode (local JWT login, no Azure)."
+	@echo "  demo          Start the local stack in demo mode (local JWT login, no Azure)."
 	@echo "  initdb         Bootstrap the database (idempotent; ./initdb.sh --force recreates)."
 	@echo "  down           Stop the local stack (data is kept)."
 	@echo "  clean          Stop the dev and test stacks and delete their data volumes."

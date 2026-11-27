@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the HTTP tests in their isolated test environment (see tests/lib.sh):
 # a fresh cluster and PostgREST recreated for every run, stopped (state
-# kept) at the end. The dev/debug stack is never touched.
+# kept) at the end. The dev/demo stack is never touched.
 set -euo pipefail
 export TEST_SUITE=api
 # shellcheck source=lib.sh

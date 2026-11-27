@@ -77,4 +77,4 @@ up from scratch:
 - The deploy play wipes the database (BUG-001, see
   [deployment.md](../deployment.md)).
 - The continuous restore test puts production data on the staging host,
-  which uses the debug login (BUG-002, #6).
+  which uses the demo login (BUG-002, #6).

@@ -25,14 +25,14 @@ Which login each environment uses depends on its compose override:
 | Override | Login | Used by |
 | --- | --- | --- |
 | `prod` | Azure (MSAL) | Terraform `prod` |
-| `staging-debug` | Debug login (shared secret, anyone can sign in as anyone) | Terraform `staging` |
+| `staging-demo` | Demo login (shared secret, anyone can sign in as anyone) | Terraform `staging` |
 | `staging` | Azure (MSAL); TLS via Cloudflare DNS challenge (`ACME_PROVIDER`, `CF_API_*`) | not used by default |
 
-A debug-login environment trusts anyone holding the shared debug secret,
+A demo-login environment trusts anyone holding the shared demo secret,
 which is in this repository, to act as any user. Keep real data off it, and
 note that the backup workflow restores production data onto `RESTORE_HOST`:
 check which override that host runs. The template points it at a
-`staging-debug` host, which is exactly this risk (BUG-002, #6; fix tracked in
+`staging-demo` host, which is exactly this risk (BUG-002, #6; fix tracked in
 #21 and #36).
 
 ## Prerequisites

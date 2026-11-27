@@ -5,11 +5,11 @@ import { config } from '../config';
 const postgrestHttpClient =
   () =>
   async (url: string, options: Options = {}) => {
-    const token = localStorage.getItem('debug-token');
+    const token = localStorage.getItem('demo-token');
     const user = { authenticated: !!token, token: `Bearer ${token}` };
     return fetchUtils.fetchJson(url, { ...options, user });
   };
-export const debugDataProvider = postgrestRestProvider(
+export const demoDataProvider = postgrestRestProvider(
   config.apiBaseUri,
   postgrestHttpClient(),
 );

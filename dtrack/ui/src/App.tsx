@@ -15,9 +15,9 @@ import { authProvider as productionAuthProvider } from './authConfig';
 import { config } from './config';
 import { Dashboard } from './Dashboard';
 import { dataProvider as productionDataProvider } from './dataConfig';
-import { debugAuthProvider } from './debug/authConfig';
-import { debugDataProvider } from './debug/dataConfig';
-import { DebugLoginPage } from './debug/LoginPage';
+import { demoAuthProvider } from './demo/authConfig';
+import { demoDataProvider } from './demo/dataConfig';
+import { DemoLoginPage } from './demo/LoginPage';
 import { CustomLayout } from './Layout';
 import {
   ActivityCreate,
@@ -52,11 +52,11 @@ let LoginPage: LoginComponent;
 let authProvider: AuthProvider;
 let dataProvider: DataProvider;
 
-if (import.meta.env.VITE_ENVIRONMENT === 'DEBUG') {
-  console.warn('VITE_ENVIRONMENT === DEBUG');
-  LoginPage = DebugLoginPage;
-  authProvider = debugAuthProvider;
-  dataProvider = debugDataProvider;
+if (import.meta.env.VITE_ENVIRONMENT === 'DEMO') {
+  console.warn('VITE_ENVIRONMENT === DEMO');
+  LoginPage = DemoLoginPage;
+  authProvider = demoAuthProvider;
+  dataProvider = demoDataProvider;
 } else {
   LoginPage = ProductionLoginPage;
   authProvider = productionAuthProvider;
