@@ -3,15 +3,15 @@ import { SignJWT } from 'jose';
 /**
  * Shared plumbing for the HTTP tests against PostgREST.
  *
- * Tokens are signed with the debug-mode HS256 secret
- * (config/docker-compose.overrides/debug.yaml), exactly like the UI's debug
+ * Tokens are signed with the demo-mode HS256 secret
+ * (config/docker-compose.overrides/demo.yaml), exactly like the UI's demo
  * login page does, so these tests exercise the same JWT → role-switch path
  * as production (only the signature scheme differs).
  */
 
 export const API_URI = process.env.DTRACK_TEST_API_URI ?? 'http://localhost:3000';
 const JWT_SECRET =
-  process.env.DTRACK_TEST_JWT_SECRET ?? 'Dummy5ecr3t4D3bug0n1yN0T4Pr0D123';
+  process.env.DTRACK_TEST_JWT_SECRET ?? 'Dummy5ecr3t4D3m00n1yN0T4Pr0D1234';
 
 /** The initial power user created by initdb.sh ($POSTGRES_USER_APP_POWER). */
 export const POWER_EMAIL =

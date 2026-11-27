@@ -1,8 +1,12 @@
+# Demo login on a public host. Anyone can sign in as anyone with the public
+# secret below, so only use it for a throwaway environment with no real data
+# (e.g. one rebuilt from scratch daily). Never restore production data here
+# (BUG-002, #6).
 services:
   postgrest:
     environment:
       PGRST_OPENAPI_SERVER_PROXY_URI: https://${HOST}/api
-      PGRST_JWT_SECRET: Dummy5ecr3t4D3bug0n1yN0T4Pr0D123
+      PGRST_JWT_SECRET: Dummy5ecr3t4D3m00n1yN0T4Pr0D1234
     labels:
       traefik.enable: "true"
       traefik.http.routers.postgrest.entrypoints: websecure
@@ -14,11 +18,10 @@ services:
       traefik.http.routers.postgrest.middlewares: postgrest-stripprefix
 
   react-admin:
-    image: react-admin:debug
+    image: react-admin:demo
     build:
       args:
-        VITE_ENVIRONMENT: DEBUG
-        VITE_JWT_SECRET: Dummy5ecr3t4D3bug0n1yN0T4Pr0D123
+        BUILD_MODE: demo  # loads dtrack/ui/.env.demo
         VITE_PALETTE_PRIMARY: "#8B8A94"
         VITE_PALETTE_SECONDARY: "#C5C2C8"
         VITE_APP_BASE_URI: https://${HOST}

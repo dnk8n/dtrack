@@ -4,7 +4,7 @@ import { KJUR } from 'jsrsasign';
 import React, { useState } from 'react';
 import { Notification, useLogin, useNotify } from 'react-admin';
 
-export const DebugLoginPage = () => {
+export const DemoLoginPage = () => {
   const [username, setUsername] = useState('');
   const login = useLogin();
   const notify = useNotify();
@@ -20,10 +20,11 @@ export const DebugLoginPage = () => {
     <Container component="main" maxWidth="xs">
       <Paper elevation={3} style={{ padding: '20px' }}>
         <Typography variant="h5" gutterBottom>
-          Debug Login
+          Demo Login
         </Typography>
         <Typography variant="body1" color="error" gutterBottom>
-          <WarningIcon fontSize="small" /> Proceed with caution! This is a debug login.
+          <WarningIcon fontSize="small" /> Demo login: no password, anyone can sign in as
+          any user. Never use with real data.
         </Typography>
         <form onSubmit={handleSubmit}>
           <TextField
@@ -34,7 +35,7 @@ export const DebugLoginPage = () => {
             type="email"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
-            label="Enter any username for DEBUG login"
+            label="Enter any username for DEMO login"
           />
           <Button
             type="submit"

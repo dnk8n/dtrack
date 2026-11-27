@@ -128,7 +128,7 @@ enforces, roughly:
 
 1. SPA sends a request with `Authorization: Bearer <JWT>`.
 2. PostgREST validates the JWT (`PGRST_JWT_SECRET`; in production a JWKS file
-   fetched from Azure by `rotate-keys.sh`, in debug mode a shared HS256 secret).
+   fetched from Azure by `rotate-keys.sh`, in demo mode a shared HS256 secret).
 3. PostgREST executes `SET LOCAL ROLE <preferred_username>` and calls
    `pre.request()`, which stores the user's id in `cyanaudit.uid` so audit rows
    are attributed.
@@ -144,7 +144,7 @@ PostgREST returns a "role does not exist" error. The SPA then calls
 `guardpost` against the Azure tenant's JWKS — and calls `auth.create_user`,
 which creates the role, grants `basic`, and inserts into `auth.users`.
 The SPA retries and proceeds. Note: onboarding therefore requires real Azure
-tokens and does not work in debug mode; debug users must already exist
+tokens and does not work in demo mode; demo users must already exist
 (the initial power user, or users created via the Employees screen).
 
 ## Audit — cyanaudit
@@ -180,13 +180,17 @@ view ([App.tsx](../dtrack/ui/src/App.tsx)); CRUD screens live in
 `src/sections/`; the dashboard renders D3 sunburst and calendar charts from
 `api.timetracking_summary` / `api.duration_calendar`.
 
-Two wiring modes, switched at build time by `VITE_ENVIRONMENT`:
+Two wiring modes, switched at build time by the Vite mode (`BUILD_MODE` build
+arg in the Dockerfile, `--mode demo` for local Vite). Demo mode loads
+[.env.demo](../dtrack/ui/.env.demo), which sets `VITE_ENVIRONMENT=DEMO`;
+production builds never read that file:
 
 - **Production/dev**: MSAL (`ra-auth-msal`) against Azure AD; data provider
   `@raphiniert/ra-data-postgrest` attaches the MSAL id token.
-- **Debug**: a local login form signs an HS256 JWT in the browser
-  (`jsrsasign`) with `VITE_JWT_SECRET` — the same secret PostgREST is given in
-  [debug.yaml](../config/docker-compose.overrides/debug.yaml). Any existing
+- **Demo**: a local login form signs an HS256 JWT in the browser
+  (`jsrsasign`) with `VITE_JWT_SECRET` from `.env.demo` — the same public,
+  demo-only secret PostgREST is given in
+  [demo.yaml](../config/docker-compose.overrides/demo.yaml). Any existing
   user's email can be impersonated. Never deploy this mode.
 
 The UI's permission checks (e.g. hiding the Employee column for non-leads)
@@ -219,5 +223,5 @@ These flow from the design and are useful context when writing tests
   by `basic` (flagged `TODO: potentially insecure` in the source).
 - The FAQ RLS policy hides unpublished rows from everyone, including their
   authors (`power` bypasses RLS, so in practice only `power` manages FAQs).
-- Debug mode trusts any bearer of the shared secret; it exists for local
-  development and tests only.
+- Demo mode trusts any bearer of the shared secret; it exists for local
+  development, presenting features and tests, never for a live server.

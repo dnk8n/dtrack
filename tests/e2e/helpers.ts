@@ -7,10 +7,10 @@ export const POWER_EMAIL =
 /** Unique per test run so created entities never collide with residue. */
 export const runId = Date.now().toString(36);
 
-/** Log in through the debug login page (VITE_ENVIRONMENT=DEBUG builds). */
+/** Log in through the demo login page (VITE_ENVIRONMENT=DEMO builds). */
 export async function login(page: Page, email: string): Promise<void> {
   await page.goto('/');
-  await page.getByLabel('Enter any username for DEBUG login').fill(email);
+  await page.getByLabel('Enter any username for DEMO login').fill(email);
   await page.getByRole('button', { name: 'Login as this User' }).click();
   await expect(page.getByRole('menuitem', { name: 'Time Trackings' })).toBeVisible({
     timeout: 15_000,

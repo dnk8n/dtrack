@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "./run.sh dev --local",
-    "debug": "./run.sh debug --local",
+    "demo": "./run.sh demo --local",
     "build": "tsc && vite build",
     "serve": "vite preview",
     "lint:fix": "eslint ./src --ext .jsx,.js,.ts,.tsx --quiet --fix --ignore-path ./.gitignore",

@@ -5,7 +5,7 @@ Time tracking for teams, built SQL-first: the database **is** the application.
 - **PostgreSQL 15** holds the schema, business logic (functions + triggers) and authorization (roles + row-level security). There is no application server.
 - **[PostgREST](https://postgrest.org)** exposes the `api` schema as a REST API.
 - **[react-admin](https://marmelab.com/react-admin/)** provides the single-page UI.
-- **Azure AD (MSAL)** authenticates users in production; a self-contained **debug login** makes local development possible without Azure.
+- **Azure AD (MSAL)** authenticates users in production; a self-contained **demo login** makes local development possible without Azure.
 - **Terraform + Ansible** provision and deploy staging/production to AWS behind Cloudflare.
 
 ## Quickstart (local, no Azure required)
@@ -16,16 +16,16 @@ Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`), `e
 make setup    # .env + keys from templates, bootstrap the database, start the stack
 ```
 
-Then log in at <http://localhost:5174> as `Dummy.User@example.com` (any password field shown is ignored — debug mode signs a local JWT). The API is at <http://localhost:3000>, Swagger UI at <http://localhost:8080>.
+Then log in at <http://localhost:5174> as `Dummy.User@example.com` (any password field shown is ignored — demo mode signs a local JWT). The API is at <http://localhost:3000>, Swagger UI at <http://localhost:8080>.
 
-See [docs/development.md](docs/development.md) for the full guide, including dev-vs-debug modes and troubleshooting.
+See [docs/development.md](docs/development.md) for the full guide, including dev-vs-demo modes and troubleshooting.
 
 ## Setting up a new system from scratch
 
 If you are standing up DTrack for an organisation with nothing but this repo
 and a server, work through these in order:
 
-1. **Run it locally in debug mode:** [docs/development.md](docs/development.md)
+1. **Run it locally in demo mode:** [docs/development.md](docs/development.md)
    (`make setup`). Confirms your machine and the test suites work (`make test`).
 2. **Create the Entra ID tenant, app registration and users, and prove real
    Microsoft sign-in locally:** [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md)

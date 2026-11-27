@@ -7,13 +7,14 @@ import {
 } from '@azure/msal-browser';
 import { msalAuthProvider } from 'ra-auth-msal';
 
+import { config } from './config';
 import { EmployeeProfile, getEmployeeProfile } from './EmployeeProfile';
 
 const msalConfig: Configuration = {
   auth: {
-    clientId: import.meta.env.VITE_MSAL_CLIENT_ID,
-    authority: import.meta.env.VITE_MSAL_AUTHORITY,
-    redirectUri: `${import.meta.env.VITE_APP_BASE_URI}/auth-callback`,
+    clientId: config.msalClientId,
+    authority: config.msalAuthority,
+    redirectUri: `${config.appBaseUri}/auth-callback`,
     navigateToLoginRequestUrl: false,
   },
   cache: {

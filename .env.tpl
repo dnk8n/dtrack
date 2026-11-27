@@ -1,7 +1,7 @@
 # Variables for docker-compose.override.yaml
 TRAEFIK_BASICAUTH=  # htpasswd -bnBC 10 "" xyz | tr -d ':\n'
 HOST=dtrack.example.com
-# Let's Encrypt contact for the TLS-ALPN challenge (prod, staging-debug overrides)
+# Let's Encrypt contact for the TLS-ALPN challenge (prod, staging-demo overrides)
 ACME_EMAIL=an@example.com
 # DNS challenge via Cloudflare (staging override only)
 ACME_PROVIDER=cloudflare

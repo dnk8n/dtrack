@@ -9,6 +9,7 @@ terraform.tfstate.backup
 terraform.tfvars
 backend.tfconf
 keys
+acme
 *.tar
 venv/
 backup/

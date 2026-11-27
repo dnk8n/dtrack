@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run the Playwright end-to-end tests in their isolated test environment
-# (see tests/lib.sh): a fresh cluster, PostgREST and the debug-mode UI
+# (see tests/lib.sh): a fresh cluster, PostgREST and the demo-mode UI
 # (built with its API base pointing at this suite's PostgREST port),
 # recreated for every run and stopped (state kept) at the end. The
-# dev/debug stack is never touched.
+# dev/demo stack is never touched.
 set -euo pipefail
 export TEST_SUITE=e2e
 # shellcheck source=lib.sh

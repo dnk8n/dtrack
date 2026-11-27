@@ -31,8 +31,8 @@ system is the database itself.
 | Layer | Tool | Where | What it covers |
 | --- | --- | --- | --- |
 | Database (unit + RLS) | [pgTAP](https://pgtap.org) via `pg_prove` | [tests/db/](../tests/db/) | Schema/role invariants, constraints and triggers, `auth.*` functions, row-level security per persona (`SET ROLE`, exactly what PostgREST does), automatic pm/lead grant/revoke |
-| API (functional) | [Vitest](https://vitest.dev) + [jose](https://github.com/panva/jose) | [tests/api/](../tests/api/) | The PostgREST surface with per-persona HS256 JWTs (debug secret): authentication, CRUD through the `api` views, RLS at HTTP level, error codes, the UI↔API contract (PostgREST query features the react-admin data provider depends on) |
-| End-to-end | [Playwright](https://playwright.dev) | [tests/e2e/](../tests/e2e/) | Real browser against the debug-mode UI: login/logout, the core create-AoW→activity→project→log-time journey through the cascading selects, dashboard render |
+| API (functional) | [Vitest](https://vitest.dev) + [jose](https://github.com/panva/jose) | [tests/api/](../tests/api/) | The PostgREST surface with per-persona HS256 JWTs (demo secret): authentication, CRUD through the `api` views, RLS at HTTP level, error codes, the UI↔API contract (PostgREST query features the react-admin data provider depends on) |
+| End-to-end | [Playwright](https://playwright.dev) | [tests/e2e/](../tests/e2e/) | Real browser against the demo-mode UI: login/logout, the core create-AoW→activity→project→log-time journey through the cascading selects, dashboard render |
 
 ### Running locally
 
@@ -51,7 +51,7 @@ Notes:
   (or keep a separate copy of `.env`) while testing. Known gap (#71).
 - **Each suite runs in its own completely isolated environment** — one
   compose project per suite with its own postgres cluster, PostgREST and UI
-  on its own host ports, built from the same compose files as dev/debug plus
+  on its own host ports, built from the same compose files as dev/demo plus
   [test.yaml](../config/docker-compose.overrides/test.yaml):
 
   | suite | project | postgres | API | UI |
@@ -62,7 +62,7 @@ Notes:
 
   That's why `make test` ([tests/run-all.sh](../tests/run-all.sh)) can run
   them in parallel, with per-suite output grouped at the end (and captured
-  under `tests/logs/`). The dev/debug stack is never touched and doesn't
+  under `tests/logs/`). The dev/demo stack is never touched and doesn't
   need to be running.
 - **Every runner recreates its environment from the ground up** — tear down
   the suite's previous environment (containers + volume), bootstrap the
@@ -111,7 +111,7 @@ expected-fail test that will flip when it is fixed.
 
 Worth knowing, but pinned as current behavior rather than xfail: `Prefer:
 return=representation` returns null generated ids because the INSTEAD OF
-triggers return `NEW` as-is (TC-API-205), and debug-mode onboarding is
+triggers return `NEW` as-is (TC-API-205), and demo-mode onboarding is
 impossible by design — `api.onboard` validates real Azure tokens in-database
 (TC-ONB-101/TC-ONB-001).
 
@@ -136,7 +136,7 @@ Decisions made building this, with the trade-offs considered:
    one `npm ci` in CI. The `tests/` package is fully separate from
    `dtrack/ui` so the app's frozen `package.json`/`yarn.lock` (which feed the
    production image build) are never touched.
-4. **E2E authenticates via debug mode, not MSAL.** The debug login signs the
+4. **E2E authenticates via demo mode, not MSAL.** The demo login signs the
    same JWT shape PostgREST validates in production; only the signature
    scheme (HS256 shared secret vs Azure JWKS) differs, and that half is
    pinned by TC-AUTH-102/103. Real-MSAL login and onboarding remain a manual
