@@ -20,6 +20,23 @@ Then log in at <http://localhost:5174> as `Dummy.User@example.com` (any password
 
 See [docs/development.md](docs/development.md) for the full guide, including dev-vs-debug modes and troubleshooting.
 
+## Setting up a new system from scratch
+
+If you are standing up DTrack for an organisation with nothing but this repo
+and a server, work through these in order:
+
+1. **Run it locally in debug mode:** [docs/development.md](docs/development.md)
+   (`make setup`). Confirms your machine and the test suites work (`make test`).
+2. **Create the Entra ID tenant, app registration and users, and prove real
+   Microsoft sign-in locally:** [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md)
+   sections 1–4. Optionally load realistic sample data from
+   [dtrack/dev/fixtures/simulated](dtrack/dev/fixtures/simulated/README.md).
+3. **Deploy to the server:** [docs/deployment.md](docs/deployment.md), plus the
+   server notes in [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
+4. **Switch from a test tenant to the real one, and restore data if you have a
+   backup:** [new-tenant.md section 6](docs/runbooks/new-tenant.md#6-switch-an-existing-deployment-to-another-tenant)
+   and [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md).
+
 ## Documentation
 
 | Doc | What it covers |
