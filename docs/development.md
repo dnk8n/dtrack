@@ -1,13 +1,14 @@
 # Local development
 
-Everything runs in Docker Compose. The only host prerequisites are Docker with
-the compose plugin and (optionally, for UI work outside containers) Node 24
-(the version the UI image and CI use) with yarn.
+Everything runs in Docker Compose. The host prerequisites are Docker with
+the compose plugin, `envsubst` (GNU gettext; `initdb.sh` uses it to fill
+`.env` values into the SQL), and optionally, for UI work outside containers,
+Node 24 (the version the UI image and CI use) with yarn.
 
 On macOS without Docker Desktop:
 
 ```sh
-brew install colima docker docker-compose
+brew install colima docker docker-compose gettext
 colima start --cpu 4 --memory 8
 # one-time: let the docker CLI find brew's compose plugin
 # add to ~/.docker/config.json:  "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]

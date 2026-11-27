@@ -30,6 +30,7 @@ See [docs/development.md](docs/development.md) for the full guide, including dev
 | [docs/test-cases.md](docs/test-cases.md) | Natural-language test case catalog (`TC-…` ids) |
 | [docs/deployment.md](docs/deployment.md) | Provisioning infrastructure and deploying |
 | [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md) | Backup, test-restore and live-restore procedures |
+| [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md) | Point DTrack at a new Azure (Entra ID) tenant, verify locally, repeat on a server |
 
 ## Repository layout
 
