@@ -4,7 +4,11 @@ OR REPLACE FUNCTION auth.create_user (
     first_name text DEFAULT NULL,
     last_name text DEFAULT NULL,
     job_position text DEFAULT NULL
-) RETURNS integer SECURITY DEFINER AS $$
+) RETURNS integer SECURITY DEFINER
+-- Pinned: callers arrive with PostgREST's search_path (api, public). During
+-- anonymous onboarding cyanaudit.uid is unset, so cyanaudit resolves its
+-- unqualified user_table ('users') through search_path and needs auth (#70).
+SET search_path = public, auth AS $$
 DECLARE
     username text;
     created_user_id integer;

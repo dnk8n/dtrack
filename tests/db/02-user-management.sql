@@ -2,7 +2,7 @@
 -- Test case ids: docs/test-cases.md
 BEGIN;
 
-SELECT plan(16);
+SELECT plan(18);
 
 -- TC-EMP-001: create_user creates a NOLOGIN role, grants basic, inserts auth.users
 SELECT auth.create_user('test.person@example.com', 'Test', 'Person', 'Engineer');
@@ -95,6 +95,20 @@ SELECT ok(auth.is_pm_of(
         (SELECT user_id FROM auth.users WHERE username = 'pred.lead'),
         (SELECT user_id FROM auth.users WHERE username = 'pred.member')),
     'TC-AUTH-001: is_pm_of true for lead over member of same project');
+
+-- TC-ONB-002: create_user works under PostgREST's per-request search_path
+-- (api, public) with no cyanaudit.uid set, as during anonymous onboarding
+-- (pre.request cannot set the uid for anon). cyanaudit then looks up the
+-- unqualified user_table 'users' via search_path, which must reach auth.
+-- Regression test for #70.
+SELECT set_config('cyanaudit.uid', '', true);
+SET LOCAL search_path = api, public;
+SELECT lives_ok(
+    $$SELECT auth.create_user('onboard.path@example.com')$$,
+    'TC-ONB-002: create_user succeeds under the API search_path without cyanaudit.uid');
+RESET search_path;
+SELECT has_role('onboard.path@example.com',
+    'TC-ONB-002: onboarded user role exists');
 
 SELECT * FROM finish();
 ROLLBACK;
