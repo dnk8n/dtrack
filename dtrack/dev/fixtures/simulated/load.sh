@@ -14,8 +14,8 @@ set -a
 source .env
 set +a
 
-: "${FIXTURE_LEAD:?set FIXTURE_LEAD to the lead's email}"
-: "${FIXTURE_MEMBER:?set FIXTURE_MEMBER to the member's email}"
+: "${FIXTURE_LEAD:?set FIXTURE_LEAD to the lead email address}"
+: "${FIXTURE_MEMBER:?set FIXTURE_MEMBER to the member email address}"
 FIXTURE_ADMIN="${FIXTURE_ADMIN:-$POSTGRES_USER_APP_POWER}"
 
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD_APP" postgres psql --quiet -X \
