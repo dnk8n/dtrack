@@ -180,12 +180,16 @@ view ([App.tsx](../dtrack/ui/src/App.tsx)); CRUD screens live in
 `src/sections/`; the dashboard renders D3 sunburst and calendar charts from
 `api.timetracking_summary` / `api.duration_calendar`.
 
-Two wiring modes, switched at build time by `VITE_ENVIRONMENT`:
+Two wiring modes, switched at build time by the Vite mode (`BUILD_MODE` build
+arg in the Dockerfile, `--mode debug` for local Vite). Debug mode loads
+[.env.debug](../dtrack/ui/.env.debug), which sets `VITE_ENVIRONMENT=DEBUG`;
+production builds never read that file:
 
 - **Production/dev**: MSAL (`ra-auth-msal`) against Azure AD; data provider
   `@raphiniert/ra-data-postgrest` attaches the MSAL id token.
 - **Debug**: a local login form signs an HS256 JWT in the browser
-  (`jsrsasign`) with `VITE_JWT_SECRET` — the same secret PostgREST is given in
+  (`jsrsasign`) with `VITE_JWT_SECRET` from `.env.debug` — the same public,
+  debug-only secret PostgREST is given in
   [debug.yaml](../config/docker-compose.overrides/debug.yaml). Any existing
   user's email can be impersonated. Never deploy this mode.
 

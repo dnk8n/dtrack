@@ -7,7 +7,6 @@ services:
     image: react-admin:debug
     build:
       args:
-        VITE_ENVIRONMENT: DEBUG
-        VITE_JWT_SECRET: Dummy5ecr3t4D3bug0n1yN0T4Pr0D123
+        BUILD_MODE: debug  # loads dtrack/ui/.env.debug
         VITE_PALETTE_PRIMARY: "#8B8A94"
         VITE_PALETTE_SECONDARY: "#C5C2C8"

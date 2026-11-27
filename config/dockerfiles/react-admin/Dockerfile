@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build
-FROM node:24 as react-build
+FROM node:24 AS react-build
 WORKDIR /app
 COPY ./package.json ./yarn.lock ./
 RUN yarn
@@ -31,9 +31,17 @@ RUN if [ "$RUNTIME_CONFIG" = "true" ]; then \
   fi
 ARG VITE_PALETTE_PRIMARY
 ARG VITE_PALETTE_SECONDARY
-ARG VITE_ENVIRONMENT
-ARG VITE_JWT_SECRET
-RUN yarn build
+# BUILD_MODE picks the Vite mode. "debug" loads the committed .env.debug
+# (debug login and its local-only signing secret); "production" never reads
+# that file. No secret is passed as a build arg, so none ends up in the image
+# history or metadata. A runtime-configured (publishable) image is always a
+# production build.
+ARG BUILD_MODE=production
+RUN case "$BUILD_MODE" in production|debug) ;; *) echo "BUILD_MODE must be production or debug"; exit 1;; esac && \
+  if [ "$RUNTIME_CONFIG" = "true" ] && [ "$BUILD_MODE" != "production" ]; then \
+  echo "RUNTIME_CONFIG=true images must be production builds"; exit 1; \
+  fi && \
+  yarn build --mode "$BUILD_MODE"
 
 # Production
 FROM nginx:alpine

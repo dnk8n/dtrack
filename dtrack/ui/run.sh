@@ -6,6 +6,7 @@ set -eo pipefail
 
 ACTION="${1:-}"
 BUILD_FLAGS=()
+VITE_MODE=()
 [[ "${2:-}" == "--local" ]] || BUILD_FLAGS=(--build --pull=always)
 
 if [[ "$ACTION" == "debug" ]]; then
@@ -14,8 +15,7 @@ if [[ "$ACTION" == "debug" ]]; then
       -f config/docker-compose.overrides/dev.yaml \
       -f config/docker-compose.overrides/debug.yaml \
       up -d "${BUILD_FLAGS[@]}")
-  export VITE_ENVIRONMENT=DEBUG
-  export VITE_JWT_SECRET=Dummy5ecr3t4D3bug0n1yN0T4Pr0D123
+  VITE_MODE=(--mode debug) # loads .env.debug
   export VITE_PALETTE_PRIMARY=#5F6368
   export VITE_PALETTE_SECONDARY=#B0B3B8
 elif [[ "$ACTION" == "dev" ]]; then
@@ -23,5 +23,5 @@ elif [[ "$ACTION" == "dev" ]]; then
 fi
 
 if [[ "${2:-}" == "--local" ]]; then
-  exec ./node_modules/.bin/vite
+  exec ./node_modules/.bin/vite "${VITE_MODE[@]}"
 fi
