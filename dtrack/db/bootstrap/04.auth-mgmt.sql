@@ -19,7 +19,7 @@ OR REPLACE FUNCTION auth.decode_id_token (id_token text) RETURNS json LANGUAGE p
   return json.dumps(asyncio.run(main()))
 $$;
 
-ALTER FUNCTION auth.decode_id_token (id_token text) OWNER TO "$POSTGRES_USER_APP_ADMIN";
+ALTER FUNCTION auth.decode_id_token (id_token text) OWNER TO admin;
 
 -- Function owner by and run as superuser, only executable by power
 CREATE

@@ -19,6 +19,6 @@ set +a
 FIXTURE_ADMIN="${FIXTURE_ADMIN:-$POSTGRES_USER_APP_POWER}"
 
 docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD_APP" postgres psql --quiet -X \
-    -U "$POSTGRES_USER_APP" -d "$POSTGRES_DB_APP" \
+    -U authenticator -d dtrack \
     -v admin="$FIXTURE_ADMIN" -v lead="$FIXTURE_LEAD" -v member="$FIXTURE_MEMBER" \
     -f - <dtrack/dev/fixtures/simulated/fixtures.sql

@@ -64,6 +64,25 @@ services:
     restart: unless-stopped
     logging: *logging
 
+  # One-shot: applies pending migrations from the checkout's
+  # dtrack/db/migrations/ as admin. Run by initdb.sh
+  # (`docker compose run --rm migrate`); the profile keeps it out of `up`.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.37.0
+    profiles: [tools]
+    depends_on: [postgres]
+    command: migrate
+    environment:
+      DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD_APP_ADMIN}@postgres:5432/dtrack?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_MIGRATIONS_TABLE: dbmate.schema_migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ./dtrack/db/migrations:/db/migrations:ro
+    networks: [backend]
+    logging: *logging
+
   postgrest:
     image: postgrest/postgrest:v14.15
     depends_on: [postgres]
@@ -73,7 +92,7 @@ services:
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE}
       PGRST_DB_PRE_REQUEST: pre.request
       PGRST_DB_SCHEMA: api
-      PGRST_DB_URI: postgres://${POSTGRES_USER_APP}:${POSTGRES_PASSWORD_APP}@postgres:5432/${POSTGRES_DB_APP}
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD_APP}@postgres:5432/dtrack
       PGRST_JWT_ROLE_CLAIM_KEY: ${PGRST_JWT_ROLE_CLAIM_KEY}
       PGRST_JWT_SECRET: "@/config/jwt-secret"
       PGRST_OPENAPI_MODE: ignore-privileges

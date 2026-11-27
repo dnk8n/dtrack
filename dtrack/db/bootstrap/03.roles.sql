@@ -1,0 +1,44 @@
+-- Grants to CyanAudit
+GRANT ALL ON SCHEMA cyanaudit TO admin;
+
+GRANT ALL ON ALL TABLES IN SCHEMA cyanaudit TO admin;
+
+GRANT ALL ON ALL SEQUENCES IN SCHEMA cyanaudit TO admin;
+
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA cyanaudit TO admin;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA cyanaudit
+GRANT ALL ON TABLES TO admin;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA cyanaudit
+GRANT ALL ON SEQUENCES TO admin;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA cyanaudit
+GRANT ALL ON FUNCTIONS TO admin;
+
+-- Avoid public and it"s default setup
+REVOKE CONNECT ON DATABASE dtrack
+FROM
+    public;
+
+-- VRMT power role
+CREATE ROLE power INHERIT NOLOGIN;
+
+ALTER ROLE power BYPASSRLS;
+
+-- Create access roles with the NOINHERIT attribute
+CREATE ROLE anon NOINHERIT NOLOGIN;
+
+CREATE ROLE basic NOINHERIT NOLOGIN;
+
+CREATE ROLE pm INHERIT NOLOGIN;
+
+CREATE ROLE lead INHERIT NOLOGIN;
+
+CREATE ROLE authenticator NOINHERIT LOGIN;
+
+-- Setup untrusted extension and function that uses it
+-- Schema
+CREATE SCHEMA auth;
+
+ALTER SCHEMA auth OWNER TO admin;

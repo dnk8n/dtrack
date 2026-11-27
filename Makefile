@@ -17,7 +17,7 @@ play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
 .PHONY: precommit infra infra-destroy play help env setup dev demo initdb \
-	down clean test test-db test-api test-e2e
+	migrate migration power-user down clean test test-db test-api test-e2e
 
 precommit:
 	pre-commit run --all-files
@@ -41,8 +41,26 @@ dev:
 demo:
 	$(COMPOSE_DEMO) up -d --build
 
+# Bootstrap (new cluster) and migrate the local database, then create the
+# local power user (POSTGRES_USER_APP_POWER in .env).
 initdb:
 	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./initdb.sh --dev-logging
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./power-user.sh
+
+# Apply pending migrations to the local database.
+migrate:
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose run --rm migrate
+
+# Create an empty migration: make migration NAME=add_widgets
+migration:
+	@test -n "$(NAME)" || { echo "usage: make migration NAME=add_widgets" >&2; exit 2; }
+	@f=dtrack/db/migrations/$$(date -u +%Y%m%d%H%M%S)_$(NAME).sql; \
+		printf -- '-- migrate:up\n\n\n-- migrate:down\n\n' > "$$f" && echo "Created $$f"
+
+# Make someone a power user on the local stack: make power-user EMAIL=...
+power-user:
+	@test -n "$(EMAIL)" || { echo "usage: make power-user EMAIL=someone@example.com" >&2; exit 2; }
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./power-user.sh "$(EMAIL)"
 
 down:
 	$(COMPOSE_DEMO) down
@@ -96,7 +114,11 @@ help:
 	@echo "  env            Create .env and keys/jwt-secret from templates (never overwrites)."
 	@echo "  dev            Start the local stack in dev mode (real Azure AD login)."
 	@echo "  demo          Start the local stack in demo mode (local JWT login, no Azure)."
-	@echo "  initdb         Bootstrap the database (idempotent; ./initdb.sh --force recreates)."
+	@echo "  initdb         Bootstrap and migrate the database, create the local power user"
+	@echo "                   (idempotent; ./initdb.sh --force recreates)."
+	@echo "  migrate        Apply pending migrations (dtrack/db/migrations/)."
+	@echo "  migration      Create an empty migration: make migration NAME=add_widgets"
+	@echo "  power-user     Make someone a power user: make power-user EMAIL=..."
 	@echo "  down           Stop the local stack (data is kept)."
 	@echo "  clean          Stop the dev and test stacks and delete their data volumes."
 	@echo "  test           Run all test suites in parallel, each in its own freshly"

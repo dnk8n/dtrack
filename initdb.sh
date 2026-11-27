@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
-# Bootstrap the DTrack database by executing everything under dtrack/db/sql/
-# in lexicographic order. Directory names encode which user runs the files on
-# which database (see docs/architecture.md); files are piped through envsubst
-# so $VARIABLES resolve from .env.
+# Bring the DTrack database up to date. Safe to run at any time:
 #
-# Idempotent: if the application database already exists this is a no-op.
+#   1. New cluster only (no `dtrack` database yet): the one-off superuser
+#      bootstrap in dtrack/db/bootstrap/ creates the admin and authenticator
+#      roles, the database, cyanaudit and the superuser-owned auth functions.
+#   2. Every run: set the admin and authenticator passwords from .env
+#      (dtrack/db/set-passwords.sql, values passed as psql variables).
+#   3. Every run: apply pending migrations in dtrack/db/migrations/ with
+#      dbmate (the compose `migrate` service), as admin.
+#
+# It never creates a power user: run ./power-user.sh for that (see
+# docs/runbooks/new-tenant.md). Background: docs/architecture.md.
+#
 # Pass --force to remove the containers and data volume and start over.
-# Pass --dev-logging (development only — used by `make initdb`) to enable
-# verbose statement logging; deployed servers must run without it.
+# Pass --dev-logging (development only, used by `make initdb`) to enable
+# verbose statement logging on a newly bootstrapped cluster; deployed servers
+# must run without it.
 #
 # Respects COMPOSE_FILE, so `make initdb` targets the same compose
 # configuration as `make demo`. Called bare (as on deployed servers) it uses
-# the default compose file resolution.
+# the default compose file resolution (the server .env sets COMPOSE_FILE).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -37,6 +45,10 @@ set -a
 source .env
 set +a
 
+: "${POSTGRES_USER:?set POSTGRES_USER in .env}"
+: "${POSTGRES_PASSWORD_APP:?set POSTGRES_PASSWORD_APP in .env}"
+: "${POSTGRES_PASSWORD_APP_ADMIN:?set POSTGRES_PASSWORD_APP_ADMIN in .env}"
+
 wait_for_postgres() {
     local i
     for i in $(seq 1 60); do
@@ -50,6 +62,19 @@ wait_for_postgres() {
     return 1
 }
 
+# psql as the superuser inside the postgres container; SQL comes on stdin.
+psql_superuser() {
+    local db="$1"
+    docker compose exec -T postgres psql --quiet --no-psqlrc --set ON_ERROR_STOP=1 \
+        -o /dev/null -U "${POSTGRES_USER}" -d "$db"
+}
+
+# Quote a value as a single-quoted psql meta-command argument.
+psql_quote() {
+    local s="${1//\\/\\\\}"
+    printf "'%s'" "${s//\'/\'\'}"
+}
+
 if [[ "$force" == true ]]; then
     echo "--> Removing containers and data volume (--force)"
     docker compose down --volumes
@@ -58,58 +83,39 @@ fi
 docker compose up --detach --build postgres
 wait_for_postgres
 
-psql_admin() {
-    docker compose exec -T postgres psql --quiet --tuples-only --no-align \
-        --set ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" "$@"
-}
-
-db_exists() {
-    [[ "$(psql_admin -c "SELECT count(*) FROM pg_database WHERE datname = '$1'")" == "1" ]]
-}
-
-if db_exists "${POSTGRES_DB_APP}"; then
-    echo "Database '${POSTGRES_DB_APP}' already exists — nothing to do (use --force to recreate)."
-    exit 0
+bootstrapped=false
+if [[ "$(docker compose exec -T postgres psql --no-psqlrc --tuples-only --no-align \
+    -U "${POSTGRES_USER}" -d postgres \
+    -c "SELECT count(*) FROM pg_database WHERE datname = 'dtrack'")" != "1" ]]; then
+    echo "--> Bootstrapping a new cluster (dtrack/db/bootstrap/)"
+    psql_superuser postgres <dtrack/db/bootstrap/01.create-db.sql
+    docker compose exec -T postgres bash -s -- -U "${POSTGRES_USER}" -d dtrack \
+        <dtrack/db/bootstrap/02.install-cyanaudit.sh
+    psql_superuser dtrack <dtrack/db/bootstrap/03.roles.sql
+    psql_superuser dtrack <dtrack/db/bootstrap/04.auth-mgmt.sql
+    bootstrapped=true
 fi
 
-execute_files() {
-    local dir="$1"
-    local base_dir user_var db_var user db file
-    base_dir="$(basename "$dir")"
+echo "--> Setting application role passwords"
+{
+    printf '\\set admin_password %s\n' "$(psql_quote "${POSTGRES_PASSWORD_APP_ADMIN}")"
+    printf '\\set authenticator_password %s\n' "$(psql_quote "${POSTGRES_PASSWORD_APP}")"
+    cat dtrack/db/set-passwords.sql
+} | psql_superuser postgres
 
-    # Directory naming: <NNN>.<user-env-var>.<db-env-var>
-    user_var="$(cut -d. -f2 <<<"$base_dir" | tr '[:lower:]' '[:upper:]')"
-    db_var="$(cut -d. -f3 <<<"$base_dir" | tr '[:lower:]' '[:upper:]')"
-    user="${!user_var}"
-    db="${!db_var}"
-
-    while IFS= read -r -d '' file; do
-        if [[ "$file" == *.sql ]]; then
-            echo "--> Executing $file as $user on $db"
-            envsubst <"$file" | docker compose exec -T postgres \
-                psql --quiet --set ON_ERROR_STOP=1 -o /dev/null -U "$user" -d "$db"
-        elif [[ "$file" == *.sh ]]; then
-            echo "--> Executing $file as bash script ($user on $db)"
-            envsubst <"$file" | docker compose exec -T postgres bash -- /dev/stdin -U "$user" -d "$db"
-        fi
-    done < <(find "$dir" -type f \( -name '*.sql' -o -name '*.sh' \) -print0 | sort -z)
-}
-
-for dir in dtrack/db/sql/*; do
-    echo "Processing $dir:"
-    execute_files "$dir"
-done
+echo "--> Applying migrations (dtrack/db/migrations/)"
+docker compose run --rm --no-deps migrate
 
 # Verbose logging for development only (make initdb passes --dev-logging):
 # log_statement = 'all' writes every statement, including sensitive data, to
 # the server log — never enable it on a deployed instance. ALTER SYSTEM is
 # idempotent and independent of the image's data-directory layout.
-if [[ "$dev_logging" == true ]]; then
-    psql_admin -c "ALTER SYSTEM SET log_statement = 'all'"
-    psql_admin -c "ALTER SYSTEM SET log_min_messages = 'notice'"
+if [[ "$dev_logging" == true && "$bootstrapped" == true ]]; then
+    echo "ALTER SYSTEM SET log_statement = 'all'; ALTER SYSTEM SET log_min_messages = 'notice';" |
+        psql_superuser postgres
     echo "--> Restarting postgres to apply dev logging configuration"
     docker compose restart postgres
     wait_for_postgres
 fi
 
-echo "Database '${POSTGRES_DB_APP}' bootstrapped."
+echo "Database 'dtrack' is up to date."

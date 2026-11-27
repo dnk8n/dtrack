@@ -4,6 +4,8 @@
 #
 #   dtrack-<UTC timestamp>.tar   mode 640, group BACKUP_GROUP
 #     dtrack.dump   pg_dump -Fc --data-only of the app DB, without cyanaudit
+#                   and without the dbmate migration history (the restore
+#                   target already has its own)
 #     cyanaudit/    cyanaudit's own dump of the audit log
 #
 # The same two parts the restore runbook (docs/runbooks/backup-restore.md)
@@ -28,10 +30,11 @@ trap 'rm -rf "$work"; docker compose exec -T postgres rm -rf /tmp/backup || true
 
 docker compose exec -T postgres rm -rf /tmp/backup
 docker compose exec -T postgres mkdir -p /tmp/backup/cyanaudit
-docker compose exec -T postgres pg_dump -U "${POSTGRES_USER_APP_ADMIN}" -Fc \
-    --exclude-schema cyanaudit --data-only -f /tmp/backup/dtrack.dump "${POSTGRES_DB_APP}"
+docker compose exec -T postgres pg_dump -U admin -Fc \
+    --exclude-schema cyanaudit --exclude-schema dbmate --data-only \
+    -f /tmp/backup/dtrack.dump dtrack
 docker compose exec -T postgres /opt/cyanaudit/tools/cyanaudit_dump.pl \
-    -h localhost -U "${POSTGRES_USER}" -d "${POSTGRES_DB_APP}" /tmp/backup/cyanaudit/
+    -h localhost -U "${POSTGRES_USER}" -d dtrack /tmp/backup/cyanaudit/
 docker compose cp postgres:/tmp/backup/. "$work/"
 
 mkdir -p "$BACKUP_DIR"

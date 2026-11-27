@@ -13,7 +13,7 @@ export const API_URI = process.env.DTRACK_TEST_API_URI ?? 'http://localhost:3000
 const JWT_SECRET =
   process.env.DTRACK_TEST_JWT_SECRET ?? 'Dummy5ecr3t4D3m00n1yN0T4Pr0D1234';
 
-/** The initial power user created by initdb.sh ($POSTGRES_USER_APP_POWER). */
+/** The power user the test runners create with power-user.sh ($POSTGRES_USER_APP_POWER). */
 export const POWER_EMAIL =
   process.env.DTRACK_TEST_POWER_EMAIL ?? 'Dummy.User@example.com';
 
