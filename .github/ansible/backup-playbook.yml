@@ -39,7 +39,7 @@
         chdir: "{{ repo_dir }}"
       with_items:
         - rm -rf /tmp/dtrack.dump /tmp/cyanaudit
-        - pg_dump -U admin -Fc --exclude-schema cyanaudit --data-only -f /tmp/dtrack.dump dtrack
+        - pg_dump -U admin -Fc --exclude-schema cyanaudit --exclude-schema dbmate --data-only -f /tmp/dtrack.dump dtrack
         - bash -c 'mkdir -p /tmp/cyanaudit && /opt/cyanaudit/tools/cyanaudit_dump.pl -h localhost -U postgres -d dtrack /tmp/cyanaudit/'
 
     - name: Empty/recreate remote backup directory

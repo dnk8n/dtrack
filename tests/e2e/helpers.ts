@@ -1,6 +1,6 @@
 import { expect, Page } from '@playwright/test';
 
-/** The initial power user created by initdb.sh ($POSTGRES_USER_APP_POWER). */
+/** The power user the test runners create with power-user.sh ($POSTGRES_USER_APP_POWER). */
 export const POWER_EMAIL =
   process.env.DTRACK_TEST_POWER_EMAIL ?? 'Dummy.User@example.com';
 

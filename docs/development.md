@@ -1,14 +1,13 @@
 # Local development
 
 Everything runs in Docker Compose. The host prerequisites are Docker with
-the compose plugin, `envsubst` (GNU gettext; `initdb.sh` uses it to fill
-`.env` values into the SQL), and optionally, for UI work outside containers,
+the compose plugin and optionally, for UI work outside containers,
 Node 24 (the version the UI image and CI use) with yarn.
 
 On macOS without Docker Desktop:
 
 ```sh
-brew install colima docker docker-compose gettext
+brew install colima docker docker-compose
 colima start --cpu 4 --memory 8
 # one-time: let the docker CLI find brew's compose plugin
 # add to ~/.docker/config.json:  "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"]
@@ -59,11 +58,13 @@ make setup     # = make env + make initdb + make demo
 
 Or step by step: `make initdb` then `make demo` (or `make dev`).
 
-`make initdb` builds and starts postgres if needed, waits for readiness, then
-executes all of `dtrack/db/sql/` in order (see
-[architecture.md](architecture.md#database-bootstrap-initdbsh)), stopping on
-the first SQL error. It is idempotent: if the application database already
-exists it is a no-op. `./initdb.sh --force` recreates everything from scratch
+`make initdb` builds and starts postgres if needed, waits for readiness,
+bootstraps a new cluster (roles, database, cyanaudit), sets the role
+passwords from `.env`, applies pending migrations with dbmate and finally
+creates the local power user (see
+[architecture.md](architecture.md#database-bootstrap-and-migrations)). It
+stops on the first SQL error and is idempotent: on an up-to-date database it
+changes nothing. `./initdb.sh --force` recreates everything from scratch
 (this **deletes the local database volume**), as does `make clean` followed by
 `make setup`.
 
@@ -82,8 +83,9 @@ and is strictly a development convenience.
 | <http://localhost:8080> | Swagger UI |
 | `localhost:5432` | Postgres (`psql -h localhost -U admin -d dtrack`, password from `.env`) |
 
-The initial power user is `$POSTGRES_USER_APP_POWER` from `.env`
-(`Dummy.User@example.com` by default). Create further users through the
+The local power user is `$POSTGRES_USER_APP_POWER` from `.env`
+(`Dummy.User@example.com` by default); `make initdb` creates it with
+`./power-user.sh`, and `make power-user EMAIL=...` promotes someone else. Create further users through the
 Employees screen while logged in as the power user, then log in as them —
 demo mode can impersonate any *existing* user.
 
@@ -115,6 +117,36 @@ recreated from scratch per run and stopped (state kept) afterwards;
 `make test-inspect-<suite>` revives one for post-mortem/debugging without
 rerunning anything. The dev stack is untouched and doesn't even need to be
 running. See [testing.md](testing.md).
+
+## Database changes
+
+The schema changes only through migrations in `dtrack/db/migrations/`, which
+[dbmate](https://github.com/amacneil/dbmate) applies in filename order as the
+`admin` role, each in its own transaction:
+
+```sh
+make migration NAME=add_widget_colour   # creates dtrack/db/migrations/<UTC timestamp>_add_widget_colour.sql
+# write the SQL under "-- migrate:up"
+make migrate                            # apply it to the local database
+make test                               # the suites rebuild from scratch, so they run every migration
+```
+
+Rules:
+
+- Never edit a migration once it is merged (that includes the baseline);
+  write a new one. Migrations are forward-only, so leave `-- migrate:down`
+  empty (dbmate requires the marker).
+- Redefine a function or view with `CREATE OR REPLACE` in a new migration,
+  copying its current definition from the latest migration that touched it.
+- New tables and columns in already-audited schemas are picked up by
+  cyanaudit's event trigger. A new schema is not audited until a migration
+  runs `SELECT cyanaudit.fn_update_audit_fields('<schema>')`.
+- A migration runs as `admin`, not the superuser. Anything that needs the
+  superuser does not belong in a migration (see
+  [architecture.md](architecture.md#database-bootstrap-and-migrations)).
+
+On servers, `./initdb.sh` applies pending migrations as part of every update
+([deployment.md](deployment.md)).
 
 ### Calling the API directly
 
@@ -153,5 +185,7 @@ pre-commit hook runs lint on commit inside `dtrack/ui`).
   a user that was never created. Log in as the power user and create the
   employee first.
 - **`keys/jwt-secret` is a directory** — see one-time setup above.
-- **`make initdb` errors mid-way** — it assumes a fresh volume. Fix the cause,
-  then `make clean` and `make setup` to start again from an empty volume.
+- **`make initdb` errors in the bootstrap** — the bootstrap only runs on a
+  fresh volume. Fix the cause, then `make clean` and `make setup` to start
+  again from an empty volume. A failed migration is rolled back, so fix it and
+  run `make migrate` again.

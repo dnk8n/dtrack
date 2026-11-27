@@ -86,8 +86,8 @@ Deploys of new code are the same playbook re-run (tag `deploy`).
 > empty database (BUG-001, fix tracked as T-OPS-01). Don't re-run it against an
 > environment whose data you need until that's fixed.
 
-Schema changes require a dump → recreate → restore cycle — see the
-[backup & restore runbook](runbooks/backup-restore.md).
+Schema changes are applied by `./initdb.sh`, which runs pending migrations
+on every run (see "Updating" under the single-server deploy below).
 
 ## Single-server deploy (pull-based)
 
@@ -105,8 +105,9 @@ The stack is [compose.server.yaml](../compose.server.yaml):
 
 Everything lives in one directory, the repository checkout (this guide uses
 `/opt/dtrack`): compose file, `.env`, `keys/`, `acme/` and scripts. The
-checkout supplies `initdb.sh` and the SQL it runs, `rotate-keys.sh` and the
-backup script; the images supply everything that runs.
+checkout supplies `initdb.sh`, the bootstrap SQL and migrations it runs,
+`power-user.sh`, `rotate-keys.sh` and the backup script; the images (including
+the one-shot dbmate `migrate` service) supply everything that runs.
 
 ### What the server needs
 
@@ -131,7 +132,7 @@ sudo install -m 644 /dev/stdin /etc/docker/daemon.json <<'JSON'
 { "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "5" } }
 JSON
 sudo systemctl restart docker
-sudo apt-get install -y git gettext-base   # gettext-base provides envsubst
+sudo apt-get install -y git
 ```
 
 Keep ufw and fail2ban as they are. Optionally stop containers reaching
@@ -172,7 +173,26 @@ place, so owner and mode survive rotation.
 
 ```sh
 sudo docker compose pull
-sudo ./initdb.sh                      # creates and bootstraps the database (once)
+sudo ./initdb.sh                      # bootstraps the database and applies the migrations
+```
+
+Then either:
+
+- **New tenant, no data:** create the first administrator, exactly as their
+  UPN, and nobody else this way. The power user is "God mode" (bypasses
+  row-level security); further users sign in themselves and are managed from
+  the Employees screen.
+
+  ```sh
+  sudo ./power-user.sh admin.person@yourtenant.example
+  ```
+
+- **Moving an existing installation:** restore its backup now, before
+  starting the API and UI (live restore steps in the
+  [backup & restore runbook](runbooks/backup-restore.md)). Don't run
+  `power-user.sh` first: the restore brings the users with it.
+
+```sh
 sudo docker compose up -d
 sudo docker compose ps                # all services running
 ```
@@ -182,8 +202,9 @@ Traefik requests the certificate on first start; watch
 a minute (usually DNS not yet pointing at the server, or port 80 blocked).
 Then continue with [runbooks/first-run.md](runbooks/first-run.md).
 
-`./initdb.sh` only acts on a new database: on an existing one it does
-nothing, and `--force` deletes it.
+`./initdb.sh` is safe to re-run: it bootstraps only a new cluster, resets the
+two application role passwords from `.env` and applies any pending
+migrations. `--force` deletes the database.
 
 ### 4. Backups and key rotation (cron)
 
@@ -209,12 +230,17 @@ the journal (`journalctl -t dtrack-backup`, `-t dtrack-keys`).
 cd /opt/dtrack
 sudo git fetch && sudo git checkout <new commit>
 sudo $EDITOR .env                     # IMAGE_TAG=sha-<new commit, 7 chars>
-sudo docker compose pull && sudo docker compose up -d
+sudo docker compose pull
+sudo deploy/backup-db.sh              # a fresh backup before migrating
+sudo ./initdb.sh                      # applies pending migrations (no-op if none)
+sudo docker compose up -d
 ```
 
-A release that changes the database schema needs the dump → recreate →
-restore cycle in the [backup & restore runbook](runbooks/backup-restore.md),
-not just a pull.
+Migrations are applied while the old API keeps running; each one runs in a
+transaction, so a failed migration changes nothing. If it fails, stay on
+(or go back to) the previous commit and image tag and investigate. A
+migration that rewrites large tables may want a short maintenance window:
+stop `postgrest` and `react-admin` before `./initdb.sh`.
 
 ## Scheduled operations (GitHub Actions)
 

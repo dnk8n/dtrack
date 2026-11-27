@@ -11,13 +11,12 @@ CF_API_KEY=dummy
 POSTGRES_DB=postgres
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=dummy
-# APP Postgres DB and credentials
-POSTGRES_DB_APP=dtrack
-POSTGRES_USER_APP=authenticator
+# Passwords of the app's two login roles: authenticator (PostgREST) and
+# admin (owns the schema, runs migrations). The role and database names
+# (authenticator, admin, dtrack) are fixed.
 POSTGRES_PASSWORD_APP=dummy
-# APP Admin Postgres Credentials
-POSTGRES_USER_APP_ADMIN=admin
 POSTGRES_PASSWORD_APP_ADMIN=dummy
+# Local power user: `make initdb` and the test suites pass it to power-user.sh
 POSTGRES_USER_APP_POWER=Dummy.User@example.com
 # Azure Creds
 AZURE_TENANT_ID=dummy

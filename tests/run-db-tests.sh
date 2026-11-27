@@ -19,14 +19,14 @@ if ! docker compose exec -T postgres bash -c 'command -v pg_prove' >/dev/null 2>
     exit 1
 fi
 
-docker compose exec -T postgres psql -q -U "${POSTGRES_USER}" -d "${POSTGRES_DB_APP}" \
+docker compose exec -T postgres psql -q -U "${POSTGRES_USER}" -d dtrack \
     -c 'CREATE EXTENSION IF NOT EXISTS pgtap'
 
 docker compose exec -T postgres rm -rf /tmp/dtrack-db-tests
 docker compose cp tests/db postgres:/tmp/dtrack-db-tests
 status=0
 output=$(docker compose exec -T postgres \
-    bash -c "pg_prove -U '${POSTGRES_USER}' -d '${POSTGRES_DB_APP}' /tmp/dtrack-db-tests/*.sql") || status=$?
+    bash -c "pg_prove -U '${POSTGRES_USER}' -d dtrack /tmp/dtrack-db-tests/*.sql") || status=$?
 printf '%s\n' "$output"
 [ "$status" -eq 0 ] || exit "$status"
 

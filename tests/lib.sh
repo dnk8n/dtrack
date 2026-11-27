@@ -8,8 +8,8 @@
 # config/docker-compose.overrides/test.yaml — so the suites can run in
 # parallel without contact, next to the dev stack. Every runner invocation
 # tears its previous environment down and recreates it from the ground up
-# with the real bootstrap (initdb.sh). When a run ends the containers are
-# stopped, not removed: `make test-inspect-<suite>` brings the environment
+# with the real bootstrap (initdb.sh, then power-user.sh). When a run ends
+# the containers are stopped, not removed: `make test-inspect-<suite>` brings the environment
 # back for post-mortem/debugging, with the run's data still in its volume.
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -76,6 +76,7 @@ recreate_test_env() {
     echo "--> Recreating isolated ${TEST_SUITE} test environment (compose project ${COMPOSE_PROJECT_NAME})"
     docker compose down --volumes --remove-orphans
     ./initdb.sh
+    ./power-user.sh
     if [[ "${#TEST_SERVICES[@]}" -gt 1 ]]; then
         docker compose up -d --build "${TEST_SERVICES[@]:1}"
     fi
