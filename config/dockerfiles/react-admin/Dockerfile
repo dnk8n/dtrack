@@ -38,7 +38,11 @@ RUN yarn build
 # Production
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --chmod=755 40-dtrack-config.sh /docker-entrypoint.d/40-dtrack-config.sh
+# COPY then chmod, not COPY --chmod: --chmod needs BuildKit, and the
+# classic builder (e.g. docker without buildx, as compose uses for local
+# dev and tests on some machines) rejects it.
+COPY 40-dtrack-config.sh /docker-entrypoint.d/40-dtrack-config.sh
+RUN chmod 755 /docker-entrypoint.d/40-dtrack-config.sh
 COPY --from=react-build /app/dist /usr/share/nginx/html
 ARG RUNTIME_CONFIG=false
 RUN if [ "$RUNTIME_CONFIG" = "true" ]; then touch /usr/share/nginx/html/.runtime-config; fi

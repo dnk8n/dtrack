@@ -22,7 +22,7 @@ source .env
 set +a
 
 umask 027
-stamp="$(date --utc +%Y%m%dT%H%M%SZ)"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"; docker compose exec -T postgres rm -rf /tmp/backup || true' EXIT
 
