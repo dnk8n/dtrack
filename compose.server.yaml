@@ -12,7 +12,9 @@
 #   because onboarding validates ID tokens against login.microsoftonline.com
 #   from inside Postgres (auth.decode_id_token).
 # - Every service logs to json-file with rotation, so logs can't fill the disk.
-name: dtrack
+# - Project name dtrack-server, distinct from the dev stack (dtrack), so the
+#   two never share containers, networks or the database volume.
+name: dtrack-server
 
 x-logging: &logging
   driver: json-file
@@ -29,7 +31,7 @@ services:
       - --api.dashboard=false
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
-      - --providers.docker.network=dtrack_proxy
+      - --providers.docker.network=dtrack-server-proxy
       - --entrypoints.web.address=:80
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
@@ -129,4 +131,6 @@ volumes:
 
 networks:
   proxy:
+    # Named explicitly: Traefik's --providers.docker.network refers to it.
+    name: dtrack-server-proxy
   backend:
