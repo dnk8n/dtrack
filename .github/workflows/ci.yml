@@ -119,3 +119,24 @@ jobs:
           name: compose-logs
           path: compose-logs-*.txt
           retention-days: 7
+
+  bootstrap-equivalence:
+    # One-off check for the move to dbmate (#47): the old envsubst bootstrap
+    # and the new bootstrap + baseline migration must produce the same
+    # database. Delete this job and tests/compare-bootstrap.sh once the first
+    # migration after the baseline lands.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install envsubst (the old initdb.sh needs it)
+        run: command -v envsubst || sudo apt-get install -y gettext-base
+
+      - name: Create environment files from templates
+        run: make env
+
+      - name: Compare old and new bootstrap
+        run: tests/compare-bootstrap.sh 2155c09e05d75f3d1e17035c0e3bc2d4e5db2c0c
