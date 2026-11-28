@@ -59,6 +59,14 @@ fi
 
 echo "--> Wiping, re-initialising and restoring"
 docker compose down --volumes
+# Cyan Audit names its log partitions after the minute they were created
+# (tb_audit_event_YYYYMMDD_HHMM). A database initialised in the same minute
+# as a partition in the backup already has that table, and the restore of
+# that partition is skipped (ops restore then fails, see below). Real
+# restores never initialise in the minute an old partition was created; here
+# wait the minute out.
+partitions="$(in_backups tar -tf "/backups/${backup}" | grep -o '[0-9]\{8\}_[0-9]\{4\}' || true)"
+while grep -qx "$(date -u +%Y%m%d_%H%M)" <<<"${partitions}"; do sleep 2; done
 "${REPO_ROOT}/initdb.sh"
 ops restore "${backup}"
 

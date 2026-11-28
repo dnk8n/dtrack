@@ -261,8 +261,15 @@ cmd_restore() {
     shopt -s nullglob
     local files=("$work"/cyanaudit/*.csv.gz)
     if [[ "${#files[@]}" -gt 0 ]]; then
-        PGPASSWORD="$POSTGRES_PASSWORD" /opt/cyanaudit/tools/cyanaudit_restore.pl \
-            -U "$POSTGRES_USER" -d dtrack "${files[@]}"
+        local out
+        out="$(PGPASSWORD="$POSTGRES_PASSWORD" /opt/cyanaudit/tools/cyanaudit_restore.pl \
+            -U "$POSTGRES_USER" -d dtrack "${files[@]}" 2>&1)"
+        printf '%s\n' "$out"
+        # cyanaudit_restore.pl skips a partition whose table already exists
+        # and still succeeds, which would silently drop that audit history.
+        if grep -q 'already exists, skipping' <<<"$out"; then
+            die "audit log partitions were skipped (see above): their history is not restored"
+        fi
     fi
     log "Recreating users' roles"
     psql_admin --quiet <"$DB_DIR/restore-fixups.sql"
