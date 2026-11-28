@@ -22,11 +22,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Normalised: pg_dump's per-run \restrict keys and the creation time in
-# cyanaudit's active partition constraint differ on every run.
+# Normalised: pg_dump's per-run \restrict keys, and cyanaudit's active
+# partition, whose name (tb_audit_event_YYYYMMDD_HHMM) and range constraint
+# carry the install time. The two clusters are built minutes apart, so the
+# name differs whenever they straddle a minute boundary.
 dump() {
     dump_raw | sed -E -e '/^\\(un)?restrict /d' \
-        -e "s/(partition_range_chk CHECK \(\(recorded >= )'[^']*'/\\1'<install time>'/"
+        -e "s/(partition_range_chk CHECK \(\(recorded >= )'[^']*'/\\1'<install time>'/" \
+        -e 's/tb_audit_event_[0-9]{8}_[0-9]{4}/tb_audit_event_<install time>/g'
 }
 
 dump_raw() {
