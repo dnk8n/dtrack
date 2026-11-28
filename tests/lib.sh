@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Shared plumbing for the test runners — source it with TEST_SUITE set to
-# db | api | e2e; don't execute it.
+# db | api | e2e | ops; don't execute it.
 #
 # Each suite runs in its own isolated environment: a compose project per
 # suite (own postgres cluster, PostgREST and UI on their own host ports)
@@ -32,8 +32,13 @@ case "${TEST_SUITE}" in
         TEST_PG_PORT=5435 TEST_API_PORT=3001 TEST_UI_PORT=5175
         TEST_SERVICES=(postgres postgrest react-admin)
         ;;
+    ops)
+        # The server's operations path: dtrack-ops backup, restore, keys.
+        TEST_PG_PORT=5436 TEST_API_PORT=3004 TEST_UI_PORT=5178
+        TEST_SERVICES=(postgres)
+        ;;
     *)
-        echo "Unknown TEST_SUITE '${TEST_SUITE}' (expected db, api or e2e)" >&2
+        echo "Unknown TEST_SUITE '${TEST_SUITE}' (expected db, api, e2e or ops)" >&2
         exit 2
         ;;
 esac

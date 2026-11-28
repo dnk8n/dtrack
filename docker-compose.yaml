@@ -16,25 +16,33 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # One-shot: applies pending migrations (dtrack/db/migrations/) as admin.
-  # Run by initdb.sh (`docker compose run --rm migrate`); the profile keeps
-  # it out of `docker compose up`.
-  migrate:
-    image: ghcr.io/amacneil/dbmate:2.37.0
+  # One-shot database tasks (dtrack/ops/dtrack-ops), built from this
+  # checkout: `docker compose run --rm --build ops <command>`. initdb.sh and
+  # power-user.sh call it; servers run the published image the same way. The
+  # profile keeps it out of `docker compose up`.
+  ops:
+    build:
+      context: ./config/dockerfiles/postgres
+      dockerfile: ./Dockerfile
+      target: ops
+      additional_contexts:
+        db: ./dtrack/db
+        ops: ./dtrack/ops
+    image: dtrack-ops:local
     profiles: [tools]
     depends_on:
       - postgres
-    command: migrate
     environment:
-      DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD_APP_ADMIN}@postgres:5432/dtrack?sslmode=disable
-      DBMATE_MIGRATIONS_DIR: /db/migrations
-      DBMATE_MIGRATIONS_TABLE: dbmate.schema_migrations
-      DBMATE_NO_DUMP_SCHEMA: "true"
-      DBMATE_WAIT: "true"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_APP: ${POSTGRES_PASSWORD_APP}
+      POSTGRES_PASSWORD_APP_ADMIN: ${POSTGRES_PASSWORD_APP_ADMIN}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
     networks:
       net: {}
     volumes:
-      - ./dtrack/db/migrations:/db/migrations:ro
+      # Local backups and restores: ./backup (gitignored) by default.
+      - ${OPS_BACKUP_DIR:-./backup}:/backups
 
   postgrest:
     depends_on:
