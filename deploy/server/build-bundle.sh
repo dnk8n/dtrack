@@ -9,11 +9,12 @@
 # template, the cron file, install.sh and VERSION. Run by
 # .github/workflows/bundle.yml, which attaches both files to the release.
 set -euo pipefail
-cd "$(dirname "$0")"
 
 version="${1:?usage: $0 <version> <image owner> [out dir]}"
 owner="${2:?usage: $0 <version> <image owner> [out dir]}"
+# The out dir is relative to where you run this, not to this script.
 out="$(mkdir -p "${3:-dist}" && cd "${3:-dist}" && pwd)"
+cd "$(dirname "$0")"
 [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || { echo "bad version: $version" >&2; exit 2; }
 [[ "$owner" =~ ^[0-9A-Za-z-]+$ ]] || { echo "bad owner: $owner" >&2; exit 2; }
 
