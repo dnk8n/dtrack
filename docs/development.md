@@ -58,7 +58,9 @@ make setup     # = make env + make initdb + make demo
 
 Or step by step: `make initdb` then `make demo` (or `make dev`).
 
-`make initdb` builds and starts postgres if needed, waits for readiness,
+`make initdb` builds and starts postgres if needed, then runs `dtrack-ops
+init` from the ops image built from your checkout (the same command servers
+run from the published image). It waits for readiness,
 bootstraps a new cluster (roles, database, cyanaudit), sets the role
 passwords from `.env`, applies pending migrations with dbmate and finally
 creates the local power user (see
@@ -71,7 +73,7 @@ changes nothing. `./initdb.sh --force` recreates everything from scratch
 Use `make initdb` rather than calling `./initdb.sh` directly: the make target
 exports the dev/demo compose file set, so postgres keeps its published port
 and dev mounts, and passes `--dev-logging`, which turns on verbose statement
-logging (`log_statement = 'all'`). Called bare (as on deployed servers) the
+logging (`log_statement = 'all'`). Called bare (as the Terraform/Ansible servers do) the
 script falls back to default compose file resolution and leaves logging at
 Postgres defaults — statement logging writes sensitive data to the server log
 and is strictly a development convenience.

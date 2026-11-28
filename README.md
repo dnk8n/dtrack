@@ -60,7 +60,9 @@ and a server, work through these in order:
 ## Repository layout
 
 ```
-dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by initdb.sh)
+dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by dtrack-ops init)
+dtrack/ops/          dtrack-ops: database tasks (init, backup, restore, keys), the ops image's command
+deploy/server/       Server release bundle: compose.yaml, .env template, cron, install.sh
 dtrack/ui/           react-admin single-page app (Vite + TypeScript)
 dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
 dtrack/dev/fixtures/simulated/  Seeded demo data loader for local use

@@ -1,25 +1,36 @@
 # Backup & restore runbook
 
-Operational procedure for backing up production, testing the restore locally,
-and restoring onto a live server (moving to a new server, or recovering from
-data loss). Schema changes don't need it: `./initdb.sh` applies migrations in
-place ([deployment.md](../deployment.md)).
+Backing up production, testing the restore on your own machine, and
+restoring onto a live server (moving to a new server, or recovering from data
+loss). Schema changes don't need it: `ops init` (locally `./initdb.sh`)
+applies migrations in place.
 
-Backups are data-only. The schema comes from the checkout: `./initdb.sh`
-bootstraps the empty database and applies every migration, then the data is
-loaded into it. Restore with the same commit (or a later one, if no migration
-in between changes the shape of existing tables) as the server the backup came
-from. The `dbmate` schema (migration history) is left out of backups because
-the restore target already has its own. Don't run `./power-user.sh` before a
-restore: the power user's row would collide with the restored users. `<PROD_HOST>` and `<STAGING_HOST>` are
-your servers' hostnames (the `HOST` in each server's `.env`). The automated equivalent runs bi-hourly via
-[backup.yml](../../.github/workflows/backup.yml).
+Backups are data-only. The schema comes from the release: `ops init`
+bootstraps the empty database and applies every migration, then
+`ops restore` loads the data into it, restores the audit log and recreates
+every user's role ([dtrack/db/restore-fixups.sql](../../dtrack/db/restore-fixups.sql)).
+Restore with the same release (or a later one, if no migration in between
+changes the shape of existing tables) as the server the backup came from. The
+`dbmate` schema (migration history) is left out of backups because the
+restore target already has its own. Power isn't part of a backup: grant it
+again with `ops power-user` after the restore, never before (`ops restore`
+refuses a database that already has users).
+
+A backup is one `dtrack-<UTC time>.tar` holding `dtrack.dump` and
+`cyanaudit/`. Older backups made by hand are a directory with the same two
+entries: pack it with `tar -C <dir> -cf dtrack-legacy.tar dtrack.dump cyanaudit`.
 
 # 1. Backup
-## Dev machine
+## Single-server stack
+Nightly by cron, or now: `docker compose run --rm ops backup` in the install
+directory. The tarball lands in `BACKUP_DIR` (see
+[server-install.md](server-install.md#stage-11-backups-and-key-rotation)).
+
+## Older servers (checkout in /home/ubuntu/dtrack, Terraform/Ansible)
+### From your machine
 - `ssh ubuntu@<PROD_HOST> -i keys/prod/instance/id`
 - `screen -S dtrack-backup`
-## Production server
+### On the server
 - `cd /home/ubuntu/dtrack`
 - Use `dtrack/dev/queries/useful.sql` to inspect current/latest activity
 - Only if proceding to a prod deploy (worth testing restore without this step): `docker compose kill --signal=SIGTERM postgrest react-admin`
@@ -40,117 +51,30 @@ your servers' hostnames (the `HOST` in each server's `.env`). The automated equi
   (be sure to frequently test the restore functionality)
 
 # 2. Test Restore
-## Dev machine
-- `TODAY="$(date --iso)"`
-- `BACKUP_DIR=~/Documents/dtrack/backups/"${TODAY}"`
-- `rm -rf "${BACKUP_DIR}"`
-- `scp -i keys/prod/instance/id -r ubuntu@<PROD_HOST>:/home/ubuntu/backups/"${TODAY}" "${BACKUP_DIR}"`
-- `cd ~/src/dtrack`
-- `git checkout main`
-- `git pull`
-- `docker compose down -v`
-- `docker compose build --pull`
-- `./initdb.sh`
-- `docker compose up -d postgres`
-- `docker compose cp "${BACKUP_DIR}"/dtrack.dump postgres:/tmp/`
-- `docker compose cp "${BACKUP_DIR}"/cyanaudit postgres:/tmp/`
-- `docker compose exec postgres bash`
-- `pg_restore -U postgres --disable-triggers --no-owner --data-only -d dtrack /tmp/dtrack.dump`
-- `/opt/cyanaudit/tools/cyanaudit_restore.pl -h localhost -U postgres -d dtrack /tmp/cyanaudit/*.csv.gz`
-- `psql -U admin -d dtrack`
-- Enter SQL commands, same as in live restore instructions below
-- `exit`
-- `exit`
-- `docker compose up -d`
-- `exit`
-- Test at http://localhost:5174
+On your own machine, with a checkout at the release the backup should go
+onto:
+
+- Copy the backup tarball into `./backup/` in the checkout (gitignored), e.g.
+  `scp <server>:/var/backups/dtrack/dtrack-<stamp>.tar backup/`
+- `./initdb.sh --force` (deletes the local database, then bootstraps and migrates)
+- `docker compose run --rm --build ops restore dtrack-<stamp>.tar`
+- `./power-user.sh <your UPN>` if you want to sign in as an administrator
+- `make demo` (or `make dev` with the backup's tenant), then test at
+  http://localhost:5174
 
 # 3. Live Restore
-## Dev machine
-- `TODAY="$(date --iso)"`
-- `BACKUP_DIR=~/Documents/dtrack/backups/"${TODAY}"`
-- `scp -i keys/staging/instance/id -r "${BACKUP_DIR}" ubuntu@<STAGING_HOST>:/home/ubuntu/backups/"${TODAY}"` (prod already has the backup)
-- SSH to live server:
-  - Test: `ssh ubuntu@<STAGING_HOST>`
-  - Prod: `ssh ubuntu@<PROD_HOST>`
-- `screen -S dtrack-restore`
-## Live server
-- `cd /home/ubuntu/dtrack`
-- `git checkout main`
-- `git pull`
-- `docker compose build --pull`
-- `TODAY="$(date --iso)"`
-- `BACKUP_DIR=/home/ubuntu/backups/"${TODAY}"`
-- Make sure that the expected backup files are present `ls -lah "${BACKUP_DIR}"*/**`
-- `docker compose down -v`
-- Can use this opportunity to upgrade system packages
-- `./initdb.sh`
-- `docker compose up -d postgres`
-- `docker compose cp "${BACKUP_DIR}"/dtrack.dump postgres:/tmp/`
-- `docker compose cp "${BACKUP_DIR}"/cyanaudit postgres:/tmp/`
-- `docker compose exec postgres bash`
-- `pg_restore -U postgres --disable-triggers --no-owner --data-only -d dtrack /tmp/dtrack.dump`
-- `/opt/cyanaudit/tools/cyanaudit_restore.pl -h localhost -U postgres -d dtrack /tmp/cyanaudit/*.csv.gz`
-- `psql -U admin -d dtrack`
-```
---- Fast forward new server transaction ids to after the historic ones
-DO $$
-DECLARE
-    current_value BIGINT := 0;
-    target_value BIGINT;
-BEGIN
-    SELECT max(txid) INTO target_value FROM cyanaudit.vw_audit_log;
-    WHILE current_value < target_value LOOP
-    current_value := txid_current();
-    COMMIT;
-    RAISE NOTICE 'Current value: %', current_value;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
---- Recreate users
-SELECT auth.create_user(email)
-FROM unnest(
-    (SELECT array_agg(email) FROM api.employees WHERE roles IS NULL AND email LIKE '%@%')
-) AS t(email);
---- Reassign PM role if applicable
-DO $$
-DECLARE
-  lead_email text;
-BEGIN
-  FOR lead_email IN
-    SELECT distinct email
-    FROM internal.user_project_roles AS upr
-    JOIN api.employees AS employees ON employees.id = upr.user_id
-    WHERE is_lead = TRUE
-    AND NOT (roles @> '["pm"]'::jsonb)
-  LOOP
-    PERFORM auth.grant_priv(lead_email, 'pm');
-  END LOOP;
-END;
-$$ LANGUAGE plpgsql;
---- Reassign lead role if applicable
-DO $$
-DECLARE
-  lead_email text;
-BEGIN
-  FOR lead_email IN
-    SELECT distinct e.email
-    FROM internal.aoe_hierarchies AS aoeh
-    JOIN api.employees AS e ON aoeh.lead_id = e.id
-    WHERE auth.is_supervisor(e.id)
-    AND NOT (e.roles @> '["lead"]'::jsonb)
-  LOOP
-    PERFORM auth.grant_priv(lead_email, 'lead');
-  END LOOP;
-END;
-$$ LANGUAGE plpgsql;
---- TODO: Elevate power users by making a record in the database so that their permissions can be recreated
-```
-- `exit`
-- `exit`
-- `docker compose up -d`
-- `exit`
-- `exit`
-- Perform sanity check at:
-  - Staging: https://<STAGING_HOST>
-  - Prod: https://<PROD_HOST>
+## Single-server stack
+[server-install.md stage 14](server-install.md#stage-14-restore-a-backup):
+back up, replace the database volume, `ops init`, `ops restore`,
+`ops power-user`.
+
+## Older servers (checkout, Terraform/Ansible)
+- Copy the backup directory to the server (`/home/ubuntu/backups/<date>`),
+  then on the server, in `screen`:
+- `cd /home/ubuntu/dtrack && git pull`
+- `BACKUP_DIR=/home/ubuntu/backups/<date>` and check it holds `dtrack.dump` and `cyanaudit/`
+- `mkdir -p backup && tar -C "${BACKUP_DIR}" -cf backup/restore.tar dtrack.dump cyanaudit`
+- `./initdb.sh --force` (deletes the database)
+- `docker compose run --rm --build ops restore restore.tar`
+- `./power-user.sh <admin UPN>`
+- `docker compose up -d`, then sanity-check `https://<HOST>`

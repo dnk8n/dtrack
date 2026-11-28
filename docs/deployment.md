@@ -99,16 +99,16 @@ Entra ID tenant, switching to the real one, restoring a backup, and updating
 to a new release.
 
 In short: CI publishes the images
-([images.yml](../.github/workflows/images.yml)) to GitHub Container Registry,
-and the server only pulls them, so CI never needs access to the server. The
-stack is [compose.server.yaml](../compose.server.yaml): Traefik is the only
+([images.yml](../.github/workflows/images.yml)) to GitHub Container Registry
+and attaches a release bundle to each GitHub release
+([bundle.yml](../.github/workflows/bundle.yml), sources in
+[deploy/server/](../deploy/server/)). The server needs no checkout: its
+`install.sh` places `compose.yaml` (images pinned to the release), `.env` and
+a cron file, and every database task (create, migrate, backup, restore, key
+rotation, power user) runs from the `dtrack-ops` image. Traefik is the only
 container with published ports (80, 443), one Let's Encrypt certificate for
-`HOST` comes through the HTTP-01 challenge, every service logs to json-file
-with rotation, and cron on the server runs nightly backups
-([deploy/backup-db.sh](../deploy/backup-db.sh)) and key rotation
-([deploy/cron.d-dtrack](../deploy/cron.d-dtrack)). Everything lives in one
-directory, a checkout of the release tag whose images `IMAGE_TAG` in `.env`
-names.
+`HOST` comes through the HTTP-01 challenge, and every service logs to
+json-file with rotation.
 
 ## Scheduled operations (GitHub Actions)
 

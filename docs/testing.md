@@ -38,7 +38,7 @@ system is the database itself.
 
 ```sh
 make env     # once: .env and keys from templates
-make test    # all three suites in parallel; or test-db / test-api / test-e2e
+make test    # all suites in parallel; or test-db / test-api / test-e2e / test-ops
 ```
 
 Notes:
@@ -59,6 +59,7 @@ Notes:
   | db | `dtrack-test-db` | 5433 | — | — |
   | api | `dtrack-test-api` | 5434 | 3002 | — |
   | e2e | `dtrack-test-e2e` | 5435 | 3001 | 5175 |
+  | ops | `dtrack-test-ops` | 5436 | — | — |
 
   That's why `make test` ([tests/run-all.sh](../tests/run-all.sh)) can run
   them in parallel, with per-suite output grouped at the end (and captured
@@ -73,6 +74,14 @@ Notes:
   environment back for post-mortem or debugging — it never reruns tests,
   the run's data is still in its volume — until the suite's next run
   clobbers and replaces it.
+- **Ops tests** ([run-ops-tests.sh](../tests/run-ops-tests.sh)) exercise the
+  server's operations path through the same `dtrack-ops` commands a server
+  runs: backup, a refused restore over existing data, wipe, init, restore
+  (same users, roles and audit history), and `rotate-keys` into a keys
+  volume (needs outbound HTTPS to Microsoft). The
+  [bundle workflow](../.github/workflows/bundle.yml) additionally installs
+  the release bundle on the CI runner exactly as a server would and runs
+  init, backup and a key rotation with a PostgREST reload against it.
 - **DB tests** run pg_prove inside the test cluster. pgTAP and pg_prove come
   from the postgres image's `test` build target, which the dev compose
   override selects; production builds use the `production` target and carry
@@ -92,7 +101,7 @@ push to main:
 - **lint** — UI type-check, eslint and prettier in check mode (no fixes),
   pre-commit hooks (whitespace, shellcheck, terraform, actionlint),
   test-case-id check, `tsc --noEmit` on `tests/`.
-- **stack-tests** — `tests/run-all.sh`, exactly as locally: all three suites
+- **stack-tests** — `tests/run-all.sh`, exactly as locally: all suites
   in parallel, each recreating its isolated environment; the dev stack is
   not started in CI at all. On failure it uploads the per-suite logs, the
   Playwright report/traces, and each test environment's container logs as

@@ -160,8 +160,13 @@ expose transaction history. Backups dump cyanaudit separately
 
 ## Database bootstrap and migrations
 
-[initdb.sh](../initdb.sh) brings the database up to date and is safe to run
-at any time. Nothing in the SQL is templated: the role and database names are
+`dtrack-ops init` ([dtrack/ops/dtrack-ops](../dtrack/ops/dtrack-ops)) brings
+the database up to date and is safe to run at any time. It runs from the
+`dtrack-ops` image (the production postgres image plus dbmate, `dtrack/db`
+and the command; `config/dockerfiles/postgres/Dockerfile`, target `ops`):
+servers run the published image (`docker compose run --rm ops init`), and
+locally [initdb.sh](../initdb.sh) runs the same command from an image built
+from the checkout, so development, CI and servers share one path. Nothing in the SQL is templated: the role and database names are
 fixed (`authenticator`, `admin`, `dtrack`), and the only secrets are passed
 to psql as variables.
 
@@ -175,11 +180,12 @@ dtrack/db/
   set-passwords.sql # superuser, every run: admin + authenticator passwords from .env
   migrations/       # dbmate, as admin, every run: pending migrations in order
     20261127000000_baseline.sql   the whole schema as of the move to dbmate (#47)
-  power-user.sql    # only via ./power-user.sh, never by initdb.sh
+  power-user.sql    # only via `dtrack-ops power-user` (./power-user.sh), never by init
+  restore-fixups.sql # by `dtrack-ops restore`: recreate users' roles after a data load
 ```
 
-Migrations run through the compose `migrate` service
-([dbmate](https://github.com/amacneil/dbmate)), connecting as `admin`, so
+Migrations run through [dbmate](https://github.com/amacneil/dbmate) in the
+ops image, connecting as `admin`, so
 everything they create is owned by `admin` exactly as before. dbmate records
 applied versions in `dbmate.schema_migrations` and runs each migration in a
 transaction. Migrations are forward-only: never edit one that has been
@@ -188,10 +194,11 @@ Anything that needs the superuser (a new untrusted-language function, a
 change to the `auth.*` role-management functions) cannot run as a migration
 and has to be done by hand on each server, so keep it rare.
 
-`initdb.sh` never creates a power user, so a restored database never collides
-with one. [power-user.sh](../power-user.sh) does that explicitly, once per new
-tenant. Backups leave out the `dbmate` schema; restores load data into a
-database that `initdb.sh` has already migrated (see
+`init` never creates a power user, so a restored database never collides
+with one. `dtrack-ops power-user` ([power-user.sh](../power-user.sh) locally)
+does that explicitly, once per new tenant. Backups (`dtrack-ops backup`) leave
+out the `dbmate` schema; `dtrack-ops restore` loads data into a database that
+`init` has already migrated (see
 [runbooks/backup-restore.md](runbooks/backup-restore.md)).
 
 ## Front end

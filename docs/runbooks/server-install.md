@@ -4,9 +4,19 @@ How to install DTrack by hand on one Linux server, from a bare machine to a
 working, backed-up installation. Every stage ends with a **Check** you run
 before moving on, so a problem shows up in the stage that caused it.
 
-The server pulls published images and never builds anything. CI never
-connects to the server: you decide when a release goes on it. The stack is
-[compose.server.yaml](../../compose.server.yaml).
+The server needs no git and no copy of the repository. Each release
+publishes three images and a small **release bundle**:
+
+| What | Where | Holds |
+| --- | --- | --- |
+| `dtrack-postgres` | `ghcr.io/<owner>/dtrack-postgres:X.Y.Z` | The database |
+| `dtrack-ui` | `ghcr.io/<owner>/dtrack-ui:X.Y.Z` | The web app (reads its settings at start) |
+| `dtrack-ops` | `ghcr.io/<owner>/dtrack-ops:X.Y.Z` | Every database task: create, migrate, backup, restore, signing keys, power user |
+| `dtrack-server-X.Y.Z.tar.gz` + `.sha256` | The release's page on GitHub | `compose.yaml` with those images pinned, the `.env` template, the cron file and `install.sh` |
+
+`install.sh` only places files. You run every command that starts, changes
+or migrates anything yourself. CI never connects to the server: you decide
+when a release goes on it.
 
 The guide has three parts, done in this order:
 
@@ -31,6 +41,8 @@ Internet ──80/443──▶ Traefik ──▶ react-admin (UI)        https:/
                     ports)            │
                                       ▼  backend network, no published ports
                                    postgres ──HTTPS──▶ login.microsoftonline.com
+                                      ▲
+                                   ops (one-shot: docker compose run --rm ops …)
 ```
 
 - Traefik is the only container with published ports (80 and 443). Docker
@@ -43,9 +55,10 @@ Internet ──80/443──▶ Traefik ──▶ react-admin (UI)        https:/
   can't fill the disk.
 - Cron on the server takes a nightly database backup (kept 7 days, readable
   by a backup group) and refreshes Microsoft's signing keys every 6 hours.
-- Everything lives in one directory (`APP_DIR`, a checkout of the release
-  tag): compose file, `.env`, `keys/`, `acme/` and the scripts. Secrets are
-  mode 600.
+- On disk, the install directory (`APP_DIR`) holds only `compose.yaml`,
+  `VERSION`, `.env` (600) and `acme/acme.json` (600). Microsoft's signing keys
+  and the database live in Docker volumes. Backups go to `BACKUP_DIR`; the
+  only other file is `/etc/cron.d/dtrack`.
 
 ## Requirements
 
@@ -53,9 +66,9 @@ Internet ──80/443──▶ Traefik ──▶ react-admin (UI)        https:/
 | --- | --- |
 | OS | Ubuntu 24.04 or 26.04 LTS (any recent Linux with Docker works, commands here are Ubuntu's) |
 | Size | 2 vCPU, 4 GB RAM, 20 GB free disk (more for backups and audit history) |
-| DNS | An A (and AAAA, if the server has IPv6) record for `HOST` pointing at the server, **before** stage 9 |
+| DNS | An A (and AAAA, if the server has IPv6) record for `HOST` pointing at the server, **before** stage 8 |
 | Inbound | TCP 80 and 443 from the internet (80 is needed for the certificate and redirects to 443) |
-| Outbound | DNS, NTP, HTTP and HTTPS. The hosts used: `github.com` (the checkout), `ghcr.io` and `pkg-containers.githubusercontent.com` (DTrack images), `registry-1.docker.io`, `auth.docker.io`, `production.cloudflare.docker.com` (Traefik, PostgREST, Swagger, dbmate images), `download.docker.com` (Docker packages), `acme-v02.api.letsencrypt.org` (certificate), `login.microsoftonline.com` (sign-in keys, and onboarding from inside the Postgres container) |
+| Outbound | DNS, NTP, HTTP and HTTPS. The hosts used: `github.com` and `objects.githubusercontent.com` (release bundle), `ghcr.io` and `pkg-containers.githubusercontent.com` (DTrack images), `registry-1.docker.io`, `auth.docker.io`, `production.cloudflare.docker.com` (Traefik, PostgREST, Swagger images), `download.docker.com` (Docker packages), `acme-v02.api.letsencrypt.org` (certificate), `login.microsoftonline.com` (signing keys, and onboarding from inside the Postgres container) |
 | Access | A shell on the server with `sudo` |
 
 Nothing here needs ufw, fail2ban or automatic security updates turned off.
@@ -67,9 +80,8 @@ Collect these first. Examples are placeholders; use your own.
 
 | Name | Example | Where it comes from |
 | --- | --- | --- |
-| `RELEASE` | `v0.1.0` | The release to install: `https://github.com/<owner>/dtrack/releases` |
-| `REPO` | `https://github.com/dnk8n/dtrack.git` | The repository whose CI publishes the images |
-| `IMAGE_OWNER` | `dnk8n` | The GitHub owner in `ghcr.io/<owner>/dtrack-postgres` |
+| `RELEASE` | `v0.2.0` | The release to install: `https://github.com/<owner>/dtrack/releases` (it must list a `dtrack-server-*.tar.gz`) |
+| `OWNER` | `dnk8n` | The GitHub owner of the repository that publishes the releases |
 | `APP_DIR` | `/opt/dtrack` | Where the installation lives (any fixed path) |
 | `HOST` | `dtrack.example.org` | The public hostname |
 | `ACME_EMAIL` | `ops@example.org` | Let's Encrypt account contact (expiry warnings) |
@@ -77,7 +89,7 @@ Collect these first. Examples are placeholders; use your own.
 | `AZURE_CLIENT_ID` | `11111111-1111-1111-1111-111111111111` | Test app registration's **Application (client) ID** |
 | `ADMIN_UPN` | `app.admin@example.onmicrosoft.com` | The test tenant's first administrator, exactly as their user principal name |
 | `BACKUP_DIR` | `/var/backups/dtrack` | Where nightly backups go |
-| `BACKUP_GROUP` | `dtrack-backup` | Group that may read backups |
+| `BACKUP_GROUP` | `dtrack-backup` | Group that may read backups (created if missing) |
 | `BACKUP_ACCOUNT` | `backup-pull` | The existing account that copies backups off the server |
 
 The test tenant, app registration and users come from
@@ -94,26 +106,26 @@ no command needs `sudo` in front of it:
 sudo -i
 ```
 
-Then paste your values (this block is the only one you edit):
+Then paste your values (this block is the only one you edit). They are
+exported because `install.sh` reads them:
 
 ```sh
-RELEASE=v0.1.0
-REPO=https://github.com/dnk8n/dtrack.git
-IMAGE_OWNER=dnk8n
-APP_DIR=/opt/dtrack
-HOST=dtrack.example.org
-ACME_EMAIL=ops@example.org
-AZURE_TENANT_ID=00000000-0000-0000-0000-000000000000
-AZURE_CLIENT_ID=11111111-1111-1111-1111-111111111111
-ADMIN_UPN=app.admin@example.onmicrosoft.com
-BACKUP_DIR=/var/backups/dtrack
-BACKUP_GROUP=dtrack-backup
-BACKUP_ACCOUNT=backup-pull
+export RELEASE=v0.2.0
+export OWNER=dnk8n
+export APP_DIR=/opt/dtrack
+export HOST=dtrack.example.org
+export ACME_EMAIL=ops@example.org
+export AZURE_TENANT_ID=00000000-0000-0000-0000-000000000000
+export AZURE_CLIENT_ID=11111111-1111-1111-1111-111111111111
+export ADMIN_UPN=app.admin@example.onmicrosoft.com
+export BACKUP_DIR=/var/backups/dtrack
+export BACKUP_GROUP=dtrack-backup
+export BACKUP_ACCOUNT=backup-pull
 ```
 
 If you lose the shell part-way, `sudo -i`, paste the block again and carry on
-from the stage you were in. From stage 4 on, `.env` holds most of these:
-`cd "$APP_DIR" && set -a && . ./.env && set +a` loads them.
+from the stage you were in. Every `docker compose` command runs in
+`APP_DIR`, where it finds `compose.yaml` and `.env` by itself.
 
 ---
 
@@ -160,7 +172,7 @@ curl -s -4 https://ifconfig.co || ip -4 addr show scope global
       outbound firewall or DNS needs fixing first.
 - [ ] The issuer is `https://login.microsoftonline.com/<AZURE_TENANT_ID>/v2.0`.
 - [ ] `HOST` resolves to this server's public address. If it doesn't yet, you
-      can continue to stage 8 and must fix it before stage 9.
+      can continue to stage 7 and must fix it before stage 8.
 
 ## Stage 1: install Docker, with log rotation
 
@@ -169,7 +181,7 @@ Install Docker Engine and the compose plugin from Docker's apt repository
 
 ```sh
 apt-get update
-apt-get install -y ca-certificates curl git openssl
+apt-get install -y ca-certificates curl openssl
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
@@ -300,142 +312,118 @@ docker run --rm curlimages/curl:8.11.1 -sS -m 5 http://10.1.2.3/ ; echo "exit $?
 - [ ] The name resolves and Microsoft answers with an HTTP code.
 - [ ] The internal address times out (`exit 28`).
 
-## Stage 3: fetch the release
+## Stage 3: download and check the release bundle
 
 ```sh
-git clone "$REPO" "$APP_DIR"
-cd "$APP_DIR"
-git checkout "$RELEASE"
+V=${RELEASE#v}
+mkdir -p /root/dtrack-releases && cd /root/dtrack-releases
+curl -fLO "https://github.com/$OWNER/dtrack/releases/download/$RELEASE/dtrack-server-$V.tar.gz"
+curl -fLO "https://github.com/$OWNER/dtrack/releases/download/$RELEASE/dtrack-server-$V.tar.gz.sha256"
+sha256sum -c "dtrack-server-$V.tar.gz.sha256"
+tar -xzf "dtrack-server-$V.tar.gz"
+ls -l "dtrack-server-$V"
 ```
 
-The checkout supplies the compose file, `initdb.sh`, the bootstrap SQL and
-migrations, `power-user.sh`, `rotate-keys.sh` and the backup script. The
-images supply everything that runs. Always check out the same tag the images
-come from.
-
-**Check:**
+Read what you are about to install; it is short:
 
 ```sh
-git describe --tags
-docker manifest inspect "ghcr.io/$IMAGE_OWNER/dtrack-postgres:${RELEASE#v}" >/dev/null && echo postgres image OK
-docker manifest inspect "ghcr.io/$IMAGE_OWNER/dtrack-ui:${RELEASE#v}" >/dev/null && echo ui image OK
-```
-
-- [ ] `git describe` prints the release tag exactly.
-- [ ] Both images are found without `docker login` (they are public and hold
-      no secrets). If not, the release's `images` workflow hasn't finished,
-      or the packages aren't public yet (see [Publishing images](#publishing-images)).
-
-## Stage 4: configuration and secrets
-
-`.env` is created from [deploy/server.env.tpl](../../deploy/server.env.tpl),
-your values are filled in and the three database passwords are generated:
-
-```sh
-cd "$APP_DIR"
-install -m 600 deploy/server.env.tpl .env
-# Templates up to v0.1.0 lack the backup settings; add them if missing.
-grep -q '^BACKUP_DIR=' .env || printf '\nBACKUP_DIR=\nBACKUP_GROUP=\nRETAIN_DAYS=7\n' >>.env
-sed -i \
-  -e "s|^IMAGE_OWNER=.*|IMAGE_OWNER=$IMAGE_OWNER|" \
-  -e "s|^IMAGE_TAG=.*|IMAGE_TAG=${RELEASE#v}|" \
-  -e "s|^HOST=.*|HOST=$HOST|" \
-  -e "s|^ACME_EMAIL=.*|ACME_EMAIL=$ACME_EMAIL|" \
-  -e "s|^AZURE_TENANT_ID=.*|AZURE_TENANT_ID=$AZURE_TENANT_ID|" \
-  -e "s|^AZURE_CLIENT_ID=.*|AZURE_CLIENT_ID=$AZURE_CLIENT_ID|" \
-  -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" \
-  -e "s|^POSTGRES_PASSWORD_APP=.*|POSTGRES_PASSWORD_APP=$(openssl rand -hex 24)|" \
-  -e "s|^POSTGRES_PASSWORD_APP_ADMIN=.*|POSTGRES_PASSWORD_APP_ADMIN=$(openssl rand -hex 24)|" \
-  -e "s|^BACKUP_DIR=.*|BACKUP_DIR=$BACKUP_DIR|" \
-  -e "s|^BACKUP_GROUP=.*|BACKUP_GROUP=$BACKUP_GROUP|" \
-  .env
-```
-
-The certificate store (Traefik refuses an `acme.json` that isn't mode 600):
-
-```sh
-install -d -m 700 acme
-install -m 600 /dev/null acme/acme.json
-```
-
-The signing-key file PostgREST reads, owned by the user PostgREST runs as
-inside its container so it can stay mode 600:
-
-```sh
-PGRST_IMAGE=$(docker compose config --images | grep postgrest)
-docker pull -q "$PGRST_IMAGE" >/dev/null
-uid=$(docker image inspect -f '{{.Config.User}}' "$PGRST_IMAGE"); echo "postgrest runs as: ${uid:-root}"
-install -d -m 711 keys
-install -m 600 -o "${uid:-0}" /dev/null keys/jwt-secret
+less "dtrack-server-$V/install.sh" "dtrack-server-$V/compose.yaml"
 ```
 
 **Check:**
 
 ```sh
+grep 'image:' "dtrack-server-$V/compose.yaml"
+for i in dtrack-postgres dtrack-ops dtrack-ui; do
+  docker manifest inspect "ghcr.io/$OWNER/$i:$V" >/dev/null && echo "$i:$V found"
+done
+```
+
+- [ ] `sha256sum` prints `OK`. For extra assurance, compare the checksum with
+      the one on the release page.
+- [ ] Every DTrack image in `compose.yaml` is pinned to `X.Y.Z`, and all three
+      are found without `docker login` (they are public and hold no secrets).
+      If not, see [Publishing images](#publishing-images).
+
+## Stage 4: install the files
+
+```sh
+"/root/dtrack-releases/dtrack-server-${RELEASE#v}/install.sh" --dir "$APP_DIR"
+```
+
+On a first install it creates `APP_DIR` (750), writes `.env` (600) from the
+template with your values and three generated database passwords, creates
+`acme/acme.json` (600), creates `BACKUP_GROUP` if missing and `BACKUP_DIR`
+(750, that group), installs `compose.yaml` and `VERSION`, and writes
+`/etc/cron.d/dtrack` with your `APP_DIR`. Any value not exported above is
+asked for. It refuses a tenant ID that isn't a GUID. It starts nothing.
+
+**Check:**
+
+```sh
+cd "$APP_DIR"
+ls -la
 grep -E '^[A-Z_]+=$' .env || echo "no empty values"
-grep -E '^(COMPOSE_FILE|IMAGE_|HOST|ACME_EMAIL|AZURE_|BACKUP_)' .env
-stat -c '%a %U %n' .env acme acme/acme.json keys keys/jwt-secret
+grep -E '^(HOST|ACME_EMAIL|AZURE_|BACKUP_)' .env
+stat -c '%a %U:%G %n' .env acme acme/acme.json "$BACKUP_DIR"
+cat /etc/cron.d/dtrack
 docker compose config --quiet && echo "compose config OK"
 ```
 
-- [ ] `no empty values`, and the printed lines show your values, with
-      `IMAGE_TAG` lacking the leading `v`.
-- [ ] Modes: `.env` 600, `acme` 700, `acme/acme.json` 600, `keys` 711,
-      `keys/jwt-secret` 600 owned by the PostgREST user.
-- [ ] `compose config OK`. Because `.env` sets
-      `COMPOSE_FILE=compose.server.yaml`, a plain `docker compose` in
-      `APP_DIR` always means the server stack.
+- [ ] `APP_DIR` holds `compose.yaml`, `VERSION`, `.env` and `acme/`, nothing
+      else.
+- [ ] `no empty values`, and the printed lines show your values
+      (`BACKUP_GID` is the backup group's numeric ID).
+- [ ] Modes: `.env` 600, `acme` 700, `acme/acme.json` 600, `BACKUP_DIR` 750
+      owned by `root:BACKUP_GROUP`.
+- [ ] The cron file runs `docker compose run --rm -T ops backup` and
+      `ops rotate-keys` from your `APP_DIR`.
+- [ ] `compose config OK`.
 
 Keep a copy of `.env` somewhere safe off the server (a password manager).
-Without it you can't read a backup back into a rebuilt server with the same
-passwords, though you can always generate new ones.
 
-## Stage 5: download the tenant's signing keys
+## Stage 5: let the backup account read backups
 
 ```sh
-cd "$APP_DIR"
-./rotate-keys.sh
+usermod -aG "$BACKUP_GROUP" "$BACKUP_ACCOUNT"
 ```
-
-It prints a diff (empty file → keys) the first time. It may also print
-`No container to kill`, since PostgREST isn't running yet; that's fine.
 
 **Check:**
 
 ```sh
-stat -c '%a %U %s bytes' keys/jwt-secret
-grep -o '"kid":"[^"]*"' keys/jwt-secret | head -3
+id "$BACKUP_ACCOUNT"
 ```
 
-- [ ] Still mode 600 with the same owner, a few kilobytes, and some `kid`
-      entries listed.
+- [ ] `BACKUP_GROUP` is among its groups. The account picks it up on its next
+      login.
 
 ## Stage 6: create the database
 
 ```sh
 cd "$APP_DIR"
-docker compose pull
-./initdb.sh
+docker compose --profile tools pull
+docker compose up -d postgres
+docker compose run --rm ops init
 ```
 
-`initdb.sh` starts Postgres, bootstraps the new cluster (roles, database,
-Cyan Audit), sets the two application passwords from `.env` and applies every
-migration with dbmate. It never creates users. It is safe to re-run; only
-`--force` deletes data.
+`ops init` waits for Postgres, bootstraps the new cluster (roles, database,
+Cyan Audit), sets the two application passwords from `.env`, applies every
+migration and, because the keys volume is empty, downloads the tenant's
+signing keys. It never creates users. It is safe to re-run at any time.
+`docker compose run --rm ops help` lists every command.
 
 **Check:**
 
 ```sh
-docker compose run --rm migrate status
-docker compose exec -T postgres psql -U postgres -d dtrack -Atc \
-  "SELECT count(*) || ' tables in api/internal' FROM information_schema.tables WHERE table_schema IN ('api','internal')"
+docker compose run --rm ops status
+docker run --rm -v dtrack_keys:/keys busybox sh -c 'ls -ln /keys; grep -o "\"kid\":\"[^\"]*\"" /keys/jwt-secret | head -3'
 docker compose exec -T postgres python3 -c \
   "import urllib.request; print(urllib.request.urlopen('https://login.microsoftonline.com/$AZURE_TENANT_ID/v2.0/.well-known/openid-configuration', timeout=10).status)"
 ```
 
-- [ ] `migrate status` lists every migration as applied (`[X]`) and
-      `Pending: 0`.
-- [ ] A non-zero table count.
+- [ ] `status` lists every migration as applied (`[X]`) and `Pending: 0`.
+- [ ] `jwt-secret` is mode `-rw-------` owned by uid 1000 (the PostgREST
+      user), with some `kid` entries.
 - [ ] `200` from inside the Postgres container. Onboarding validates each new
       user's token from there, so if this fails, stage 2's rules or the
       outbound firewall are blocking it.
@@ -447,7 +435,7 @@ their UPN exactly (case included):
 
 ```sh
 cd "$APP_DIR"
-./power-user.sh "$ADMIN_UPN"
+docker compose run --rm ops power-user "$ADMIN_UPN"
 ```
 
 Power is "God mode": it bypasses row-level security. Use it only to configure
@@ -531,46 +519,35 @@ docker compose exec -T postgres psql -U postgres -d dtrack -c 'SELECT * FROM aut
 
 ## Stage 11: backups and key rotation
 
-Create the backup group, let the backup pull account read through it, and
-install the cron jobs with your paths:
+`install.sh` already installed `/etc/cron.d/dtrack`: a backup every night at
+01:15 server time and a key refresh every 6 hours, both through the `ops`
+image. Each backup is `dtrack-<UTC time>.tar` (mode 640, group
+`BACKUP_GROUP`) holding `dtrack.dump` (data) and `cyanaudit/` (audit log).
+Backups older than `RETAIN_DAYS` days (7, in `.env`) are deleted, but only
+after a successful backup. Key rotation reloads PostgREST only when
+Microsoft's keys changed.
+
+Take the first backup now, and run a key refresh by hand:
 
 ```sh
 cd "$APP_DIR"
-groupadd --system -f "$BACKUP_GROUP"
-usermod -aG "$BACKUP_GROUP" "$BACKUP_ACCOUNT"
-sed "s|/opt/dtrack|$APP_DIR|g" deploy/cron.d-dtrack | install -m 644 /dev/stdin /etc/cron.d/dtrack
-cat /etc/cron.d/dtrack
-```
-
-[deploy/cron.d-dtrack](../../deploy/cron.d-dtrack) runs
-[deploy/backup-db.sh](../../deploy/backup-db.sh) nightly at 01:15 server
-time, and `rotate-keys.sh` every 6 hours, which reloads PostgREST only when
-Microsoft's keys changed. The backup script reads `BACKUP_DIR`,
-`BACKUP_GROUP` and `RETAIN_DAYS` from `.env`. Each backup is `dtrack-<UTC time>.tar` (mode 640,
-group `BACKUP_GROUP`) holding `dtrack.dump` and `cyanaudit/`, the layout the
-[restore runbook](backup-restore.md) and Part C expect. Backups older than
-`RETAIN_DAYS` days (7) are deleted, but only after a successful backup.
-
-Take the first backup now:
-
-```sh
-deploy/backup-db.sh
+docker compose run --rm ops backup
+docker compose run --rm ops rotate-keys
 ```
 
 **Check:**
 
 ```sh
 ls -l "$BACKUP_DIR"
-tar -tf "$(ls -1t "$BACKUP_DIR"/dtrack-*.tar | head -1)" | head
-sudo -u "$BACKUP_ACCOUNT" -g "$BACKUP_GROUP" head -c0 "$(ls -1t "$BACKUP_DIR"/dtrack-*.tar | head -1)" && echo "backup account can read"
-./rotate-keys.sh && echo "keys unchanged or refreshed"
+f=$(ls -1t "$BACKUP_DIR"/dtrack-*.tar | head -1)
+tar -tf "$f" | head
+sudo -u "$BACKUP_ACCOUNT" -g "$BACKUP_GROUP" head -c0 "$f" && echo "backup account can read"
 ```
 
-- [ ] One `dtrack-*.tar`, `-rw-r----- root BACKUP_GROUP`, in a directory with
-      mode 750.
+- [ ] One `dtrack-*.tar`, `-rw-r----- root BACKUP_GROUP`.
 - [ ] The tarball lists `dtrack.dump` and `cyanaudit/…csv.gz` files.
-- [ ] `backup account can read`. The account picks up its new group on its
-      next login.
+- [ ] `backup account can read`.
+- [ ] `rotate-keys` printed `Signing keys unchanged.`
 - [ ] Tomorrow: `journalctl -t dtrack-backup --since yesterday` shows
       `backup written`, and `journalctl -t dtrack-keys` shows no errors.
 
@@ -615,28 +592,26 @@ The test installation is complete. Bring it into use following
    AZURE_CLIENT_ID=<real client ID>
    sed -i -e "s|^AZURE_TENANT_ID=.*|AZURE_TENANT_ID=$AZURE_TENANT_ID|" \
           -e "s|^AZURE_CLIENT_ID=.*|AZURE_CLIENT_ID=$AZURE_CLIENT_ID|" .env
-   set -a; . ./.env; set +a                      # HOST etc. for the checks below
-   ./rotate-keys.sh
-   docker compose up -d --force-recreate postgrest react-admin
+   docker compose run --rm ops rotate-keys
+   docker compose up -d postgrest react-admin
    ```
 
 3. The test tenant's users stay in the database as roles named after their
    UPNs. If you restore production data next (Part C), the restore replaces
    them. Otherwise create the real administrator with
-   `./power-user.sh <real admin UPN>`, and remove the test users from the
-   Employees screen.
+   `docker compose run --rm ops power-user <real admin UPN>`, and remove the
+   test users from the Employees screen.
 
 **Check:**
 
 ```sh
+set -a; . ./.env; set +a
 grep -E '^AZURE_' .env
 curl -sS --resolve "$HOST:443:127.0.0.1" "https://$HOST/config.js"
-docker compose exec -T postgres python3 -c \
-  "import urllib.request; print(urllib.request.urlopen('https://login.microsoftonline.com/$AZURE_TENANT_ID/v2.0/.well-known/openid-configuration', timeout=10).status)"
 ```
 
-- [ ] `.env` and `config.js` show the real tenant GUID and client ID, and the
-      container gets `200`.
+- [ ] `.env` and `config.js` show the real tenant GUID and client ID, and
+      `rotate-keys` printed `Signing keys updated`.
 - [ ] In a private window, a real user signs in. Delete the test app
       registration, or the whole test tenant, once you no longer need it.
 
@@ -646,75 +621,60 @@ docker compose exec -T postgres python3 -c \
 
 ## Stage 14: restore a backup
 
-Restoring **deletes the database on this server** and replaces it with the
-backup. Backups are data-only: the schema comes from the checked-out release
-(`./initdb.sh`), and the data is loaded into it. A backup restores cleanly
-only into the same release it was taken from, or a later one whose
-migrations don't change the shape of existing tables.
+Restoring **replaces the database on this server** with the backup. Backups
+are data-only: the schema comes from the installed release (`ops init`), and
+`ops restore` loads the data into it, restores the audit log and recreates
+every user's role. A backup restores cleanly only into the same release it
+was taken from, or a later one whose migrations don't change the shape of
+existing tables.
 
 If the backup comes from an older installation (for example one that
 predates this release's migrations), restore it on your own machine first
-with [backup-restore.md section 2](backup-restore.md#2-test-restore), checked
-out at this release. Only continue here once that works.
+with [backup-restore.md section 2](backup-restore.md#2-test-restore), at this
+release. Only continue here once that works.
 
-Put the backup on the server, either a `dtrack-*.tar` from `backup-db.sh` or
-a directory holding `dtrack.dump` and `cyanaudit/`:
+Put the backup in `BACKUP_DIR`: either a `dtrack-*.tar` from `ops backup`, or
+pack a directory holding `dtrack.dump` and `cyanaudit/` into one:
 
 ```sh
-sudo -i
-cd /opt/dtrack                                       # your APP_DIR
-RESTORE=/root/restore && mkdir -p "$RESTORE"
-tar -C "$RESTORE" -xf /path/to/dtrack-YYYYMMDDTHHMMSSZ.tar   # or copy the directory's contents there
-ls -l "$RESTORE" "$RESTORE/cyanaudit" | head
+cp /path/to/dtrack-YYYYMMDDTHHMMSSZ.tar "$BACKUP_DIR"/
+# or: tar -C /path/to/backup-dir -cf "$BACKUP_DIR/legacy.tar" dtrack.dump cyanaudit
+ls -l "$BACKUP_DIR"
 ```
 
-Keep a copy of what's there now, then stop the app and rebuild the database
-from scratch:
+Keep a copy of what's there now, then replace the database with an empty one:
 
 ```sh
-deploy/backup-db.sh                    # the current (test) data, just in case
-docker compose stop react-admin postgrest swagger
-./initdb.sh --force                    # deletes the database volume, then bootstraps and migrates
+cd "$APP_DIR"
+docker compose run --rm ops backup              # the current (test) data, just in case
+docker compose down                             # stops everything; volumes stay
+docker volume rm dtrack_postgres_data           # deletes the database
+docker compose up -d postgres
+docker compose run --rm ops init
 ```
 
-Load the data and the audit history:
+Restore, give the real administrator power again (power isn't part of a
+backup), and start everything:
 
 ```sh
-docker compose cp "$RESTORE/dtrack.dump" postgres:/tmp/
-docker compose cp "$RESTORE/cyanaudit" postgres:/tmp/
-docker compose exec -T postgres pg_restore -U postgres --disable-triggers --no-owner --data-only -d dtrack /tmp/dtrack.dump
-docker compose exec -T postgres sh -c \
-  '/opt/cyanaudit/tools/cyanaudit_restore.pl -h localhost -U postgres -d dtrack /tmp/cyanaudit/*.csv.gz'
-```
-
-Recreate the users' roles: open a database shell and paste the SQL block
-from [backup-restore.md section 3](backup-restore.md#3-live-restore) (it
-fast-forwards transaction IDs past the audit history, recreates a role per
-employee and re-grants `pm` and `lead`):
-
-```sh
-docker compose exec postgres psql -U admin -d dtrack
-```
-
-Power isn't carried in a backup yet, so grant it again to the real
-administrator, then start everything and clean up:
-
-```sh
-./power-user.sh <real admin UPN>
+docker compose run --rm ops restore dtrack-YYYYMMDDTHHMMSSZ.tar   # a file name in BACKUP_DIR
+docker compose run --rm ops power-user <real admin UPN>
 docker compose up -d
-docker compose exec -T postgres rm -rf /tmp/dtrack.dump /tmp/cyanaudit
-rm -rf "$RESTORE"
 ```
+
+`ops restore` refuses a database that already has users, so it can't mix a
+backup into live data. It fast-forwards transaction IDs past the audit
+history first, which can take a few minutes for a long history.
 
 **Check:**
 
 ```sh
 docker compose exec -T postgres psql -U postgres -d dtrack -c 'SELECT * FROM auth.get_user_roles();' | head -20
-docker compose exec -T postgres psql -U postgres -d dtrack -Atc 'SELECT count(*) FROM api.employees'
-deploy/backup-db.sh                    # the first backup of the restored data
+docker compose exec -T postgres psql -U postgres -d dtrack -Atc 'SELECT count(*) FROM auth.users'
+docker compose run --rm ops backup              # the first backup of the restored data
 ```
 
-- [ ] The expected users are listed with their roles, and the employee count
+- [ ] The expected users are listed with their roles, and the user count
       matches the old installation.
 - [ ] Users sign in and see their history; spot-check a few people's time
       entries against the old system.
@@ -724,53 +684,67 @@ deploy/backup-db.sh                    # the first backup of the restored data
 
 # Updating to a new release
 
+Read the release notes first. Then download and check the new bundle (stage
+3 with the new `RELEASE`), and:
+
 ```sh
 sudo -i
-cd /opt/dtrack                                       # your APP_DIR
-RELEASE=vX.Y.Z
-git fetch --tags && git checkout "$RELEASE"
-sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=${RELEASE#v}|" .env
-diff <(grep -oE '^[A-Z_]+=' deploy/server.env.tpl) <(grep -oE '^[A-Z_]+=' .env)   # new settings?
-docker compose pull
-deploy/backup-db.sh                                  # a fresh backup before migrating
-./initdb.sh                                          # applies pending migrations (no-op if none)
+export RELEASE=vX.Y.Z APP_DIR=/opt/dtrack        # the new release, your APP_DIR
+"/root/dtrack-releases/dtrack-server-${RELEASE#v}/install.sh" --dir "$APP_DIR"
+cd "$APP_DIR"
+diff compose.yaml.previous compose.yaml          # what changed
+docker compose --profile tools pull
+docker compose run --rm ops backup               # a fresh backup before migrating
+docker compose run --rm ops init                 # applies pending migrations (no-op if none)
 docker compose up -d
-docker image prune -f                                # remove the previous images
+docker image prune -f                            # remove the previous images
 ```
 
-Read the release notes first. If the `diff` lists a setting missing from your
-`.env`, add it. Migrations run while the old API keeps serving, and each runs
-in a transaction, so a failed migration changes nothing: go back to the
-previous tag and `IMAGE_TAG` and investigate. For a migration that rewrites
-large tables, stop `postgrest` and `react-admin` before `./initdb.sh`.
+`install.sh` replaces `compose.yaml` (keeping the old one as
+`compose.yaml.previous`), `VERSION` and the cron file, and never changes
+existing `.env` values. If the release adds settings, it appends them with
+their defaults and lists them: review those before continuing.
 
-**Check:** stage 6's `migrate status` shows `Pending: 0`, stage 9's checks
-pass, and `git describe --tags` matches `IMAGE_TAG`.
+Migrations run while the old API keeps serving, and each runs in a
+transaction, so a failed migration changes nothing: put
+`compose.yaml.previous` back, `docker compose up -d`, and investigate. For a
+migration that rewrites large tables, `docker compose stop postgrest
+react-admin` before `ops init`.
+
+**Check:** `cat VERSION` shows the new release, `ops status` shows
+`Pending: 0`, and stage 9's checks pass.
 
 # Day-to-day operations
 
-Everything is run from `APP_DIR` as root.
+Everything is run as root from `APP_DIR`.
 
 | Task | Command |
 | --- | --- |
 | Status | `docker compose ps` |
 | Logs | `docker compose logs --tail 100 -f <service>` |
 | Restart one service | `docker compose restart <service>` |
-| Database shell | `docker compose exec postgres psql -U admin -d dtrack` |
-| Backup now | `deploy/backup-db.sh` |
+| Every ops command | `docker compose run --rm ops help` |
+| Migration status | `docker compose run --rm ops status` |
+| Database shell (admin) | `docker compose run --rm ops psql` |
+| Backup now | `docker compose run --rm ops backup` |
+| Refresh signing keys | `docker compose run --rm ops rotate-keys` |
 | Backup and key job logs | `journalctl -t dtrack-backup`, `journalctl -t dtrack-keys` |
+| Installed release | `cat VERSION` |
 | Disk | `df -h /`, `docker system df`, `du -sh "$BACKUP_DIR"` |
 | Certificate expiry | `echo \| openssl s_client -connect 127.0.0.1:443 -servername HOST 2>/dev/null \| openssl x509 -noout -enddate` (Traefik renews 30 days before) |
 
-Files that matter, all under `APP_DIR` unless noted:
+What's on the server:
 
 | Path | What | Mode |
 | --- | --- | --- |
-| `.env` | All settings and database passwords | 600 |
-| `keys/jwt-secret` | Microsoft's public signing keys (refreshed by cron) | 600 |
-| `acme/acme.json` | Let's Encrypt account key and certificate | 600 |
+| `APP_DIR/compose.yaml` | The stack, images pinned to the installed release | 644 |
+| `APP_DIR/.env` | All settings and database passwords | 600 |
+| `APP_DIR/acme/acme.json` | Let's Encrypt account key and certificate | 600 |
+| `APP_DIR/VERSION` | Installed release | 644 |
 | `/etc/cron.d/dtrack` | Backup and key rotation schedule | 644 |
 | `BACKUP_DIR` | Nightly backups, 7 days | 750 / 640 |
+| Docker volume `dtrack_postgres_data` | The database | |
+| Docker volume `dtrack_keys` | Microsoft's public signing keys (refreshed by cron) | 600 |
 | `/usr/local/sbin/docker-egress-block` | Container egress rules (stage 2) | 755 |
 
 Leave the repository's GitHub Actions `backup.yml` and `rotate-keys.yml`
@@ -779,12 +753,14 @@ SSH, which this setup replaces with cron.
 
 ## Publishing images
 
-Releases are published by CI: pushing a `vX.Y.Z` tag makes the
+Releases are published by CI. Pushing a `vX.Y.Z` tag makes the
 [images workflow](../../.github/workflows/images.yml) publish
-`ghcr.io/<owner>/dtrack-postgres` and `ghcr.io/<owner>/dtrack-ui` as
-`X.Y.Z`, `X.Y` and `sha-<7 chars>`; each push to `main` publishes `main`,
-`latest` and `sha-<7 chars>`. The images hold no secrets or settings. In a
-new fork, make both packages public once after the first run
+`dtrack-postgres`, `dtrack-ui` and `dtrack-ops` as `X.Y.Z`, `X.Y` and
+`sha-<7 chars>`; publishing the GitHub release for that tag makes the
+[bundle workflow](../../.github/workflows/bundle.yml) attach
+`dtrack-server-X.Y.Z.tar.gz` and its `.sha256`. The images hold no secrets or
+settings. A newly created package on GitHub Container Registry is private:
+make each one public once after its first publish
 (`https://github.com/users/<owner>/packages/container/<package>/settings` →
 *Change visibility* → *Public*), or `docker login ghcr.io` on the server with
 a read-only token.
@@ -795,10 +771,12 @@ a read-only token.
 | --- | --- |
 | Browser shows `TRAEFIK DEFAULT CERT` / certificate warning | Let's Encrypt couldn't validate. `docker compose logs traefik \| grep -i acme`. Usually `HOST` doesn't resolve to this server yet, port 80 isn't reachable from the internet, or `acme/acme.json` isn't mode 600. Fix it, then `docker compose restart traefik`. After 5 failures in an hour Let's Encrypt pauses that hostname for an hour. |
 | `404 page not found` (plain text) | Traefik has no route for the name you used: you browsed to an IP or another name, or `HOST` in `.env` is wrong. |
-| `502 Bad Gateway` on `/api` | PostgREST is down or can't reach Postgres: `docker compose logs postgrest`. A wrong `POSTGRES_PASSWORD_APP` is fixed by re-running `./initdb.sh`, which resets it from `.env`. |
+| `502 Bad Gateway` on `/api` | PostgREST is down or can't reach Postgres: `docker compose logs postgrest`. A wrong `POSTGRES_PASSWORD_APP` is fixed by re-running `ops init`, which resets it from `.env`. |
+| PostgREST restarting, log mentions the JWT secret or `/keys/jwt-secret` | The keys volume is empty: `docker compose run --rm ops rotate-keys`. |
 | UI container restarting, log says `missing required environment` | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` or `HOST` is empty in `.env`. |
-| `manifest unknown` on `docker compose pull` | `IMAGE_TAG` has a leading `v`, or that release's images aren't published yet. |
+| `manifest unknown` or `denied` on pull | That release's images aren't published yet, or a package is still private (see [Publishing images](#publishing-images)). |
+| `ops` says `postgres did not become ready` | Start it first: `docker compose up -d postgres`, then `docker compose logs postgres`. |
 | Sign-in errors starting `AADSTS` | See [new-tenant.md troubleshooting](new-tenant.md#troubleshooting). `AADSTS50011` means `https://HOST/auth-callback` isn't on the app registration. |
 | Sign-in works but the user is never created | Onboarding couldn't reach Microsoft from inside Postgres (stage 6's check), often stage 2's rules or the outbound firewall. `docker compose logs postgres \| grep -i onboard`. |
-| API answers `JWSError` / `JWT invalid` | `keys/jwt-secret` doesn't hold the current tenant's keys: `./rotate-keys.sh`. |
+| API answers `JWSError` / `JWT invalid` | The keys volume doesn't hold the current tenant's keys: `docker compose run --rm ops rotate-keys`. |
 | Disk filling | `docker system df` (old images: `docker image prune -f`), `du -sh "$BACKUP_DIR"`, `journalctl --disk-usage`. Container logs are capped at 50 MB each. |
