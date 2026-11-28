@@ -1,10 +1,14 @@
 # syntax=docker/dockerfile:1
 
-# Build cyanaudit from source
+# Build cyanaudit from source. The source is a vendored, pinned copy of the
+# upstream archive (see vendor/README.md), checked against its SHA-256 so the
+# build fails rather than silently using different code.
 FROM postgres:15 AS build
-RUN apt-get update && apt-get install -y wget build-essential libarchive-tools make postgresql-server-dev-15
-RUN wget https://bitbucket.org/neadwerx/cyanaudit/get/master.zip -O /tmp/cyanaudit.zip
-RUN mkdir /tmp/cyanaudit && bsdtar -xvf /tmp/cyanaudit.zip --strip-components=1 -C /tmp/cyanaudit
+ARG CYANAUDIT=cyanaudit-2.2.3-806f6c5
+RUN apt-get update && apt-get install -y build-essential libarchive-tools make postgresql-server-dev-15
+COPY vendor/${CYANAUDIT}.zip vendor/${CYANAUDIT}.zip.sha256 /tmp/
+RUN cd /tmp && sha256sum -c ${CYANAUDIT}.zip.sha256
+RUN mkdir /tmp/cyanaudit && bsdtar -xvf /tmp/${CYANAUDIT}.zip --strip-components=1 -C /tmp/cyanaudit
 RUN rm -rf /tmp/cyanaudit/dist
 RUN mkdir -p /tmp/build/cyanaudit && cp -a /tmp/cyanaudit /tmp/build/
 RUN cd /tmp/build/cyanaudit && make && make install DESTDIR=/build
