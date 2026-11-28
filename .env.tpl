@@ -1,21 +1,22 @@
-# Variables for docker-compose.overide.yaml
+# Variables for docker-compose.override.yaml
 TRAEFIK_BASICAUTH=  # htpasswd -bnBC 10 "" xyz | tr -d ':\n'
 HOST=dtrack.example.com
+# Let's Encrypt contact for the TLS-ALPN challenge (prod, staging-demo overrides)
+ACME_EMAIL=an@example.com
+# DNS challenge via Cloudflare (staging override only)
 ACME_PROVIDER=cloudflare
 CF_API_EMAIL=an@example.com
 CF_API_KEY=dummy
-ACME_EMAIL=an@example.com
-# Initial proveleged Postgres DB and superuser credentials
+# Initial privileged Postgres DB and superuser credentials
 POSTGRES_DB=postgres
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=dummy
-# APP Postgres DB and credentials
-POSTGRES_DB_APP=dtrack
-POSTGRES_USER_APP=authenticator
+# Passwords of the app's two login roles: authenticator (PostgREST) and
+# admin (owns the schema, runs migrations). The role and database names
+# (authenticator, admin, dtrack) are fixed.
 POSTGRES_PASSWORD_APP=dummy
-# APP Admin Postgres Credentials
-POSTGRES_USER_APP_ADMIN=admin
 POSTGRES_PASSWORD_APP_ADMIN=dummy
+# Local power user: `make initdb` and the test suites pass it to power-user.sh
 POSTGRES_USER_APP_POWER=Dummy.User@example.com
 # Azure Creds
 AZURE_TENANT_ID=dummy

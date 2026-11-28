@@ -1,7 +1,9 @@
-version: "3"
-
 services:
   postgres:
+    build:
+      # Include pgTAP/pg_prove so the database test suite can run against
+      # the dev stack (see docs/testing.md); production deploys are unaffected.
+      target: test
     ports:
       - published: 5432
         target: 5432

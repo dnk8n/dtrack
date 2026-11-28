@@ -7,10 +7,13 @@ on:
 
 jobs:
   rotate_keys:
-    runs-on: ubuntu-latest
+    # Skips (rather than fails) until a deployment sets PROD_HOST and/or
+    # RESTORE_HOST as repository variables.
+    if: vars.PROD_HOST != '' || vars.RESTORE_HOST != ''
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setting up SSH key and known hosts
         env:
@@ -22,6 +25,12 @@ jobs:
           chmod 600 private_key
           echo "$HOST_KEY" >> known_hosts
           echo "$HOST_KEY_TEST" >> known_hosts
+
+      - name: Render inventory from repository variables
+        env:
+          PROD_HOST: ${{ vars.PROD_HOST }}
+          RESTORE_HOST: ${{ vars.RESTORE_HOST }}
+        run: .github/ansible/render-inventory.sh > .github/ansible/hosts.ini
 
       - name: Run Ansible Playbook (Rotate Keys)
         run: ansible-playbook -v .github/ansible/rotate-keys-playbook.yml -i .github/ansible/hosts.ini

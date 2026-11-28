@@ -1,3 +1,4 @@
+.claude
 .env
 docker-compose.override.y*ml
 .project
@@ -8,6 +9,13 @@ terraform.tfstate.backup
 terraform.tfvars
 backend.tfconf
 keys
+acme
 *.tar
 venv/
 backup/
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+tests/logs/
+.DS_Store
+.github/ansible/hosts.ini

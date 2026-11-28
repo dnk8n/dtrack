@@ -1,10 +1,11 @@
-version: "3"
-
 services:
   postgres:
     build:
       context: ./config/dockerfiles/postgres
       dockerfile: ./Dockerfile
+      # The Dockerfile's last stage adds test tooling; production must be
+      # selected explicitly (the dev override switches to the test stage).
+      target: production
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -14,6 +15,26 @@ services:
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  # One-shot: applies pending migrations (dtrack/db/migrations/) as admin.
+  # Run by initdb.sh (`docker compose run --rm migrate`); the profile keeps
+  # it out of `docker compose up`.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.37.0
+    profiles: [tools]
+    depends_on:
+      - postgres
+    command: migrate
+    environment:
+      DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD_APP_ADMIN}@postgres:5432/dtrack?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_MIGRATIONS_TABLE: dbmate.schema_migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    networks:
+      net: {}
+    volumes:
+      - ./dtrack/db/migrations:/db/migrations:ro
 
   postgrest:
     depends_on:
@@ -25,12 +46,12 @@ services:
       PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE}
       PGRST_DB_PRE_REQUEST: pre.request
       PGRST_DB_SCHEMA: api
-      PGRST_DB_URI: postgres://${POSTGRES_USER_APP}:${POSTGRES_PASSWORD_APP}@postgres:5432/${POSTGRES_DB_APP}
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD_APP}@postgres:5432/dtrack
       PGRST_JWT_ROLE_CLAIM_KEY: ${PGRST_JWT_ROLE_CLAIM_KEY}
       PGRST_JWT_SECRET: "@/config/jwt-secret"
       PGRST_OPENAPI_MODE: ignore-privileges
       PGRST_OPENAPI_SECURITY_ACTIVE: "true"
-    image: postgrest/postgrest:v10.1.2
+    image: postgrest/postgrest:v14.15
     networks:
       net: {}
     restart: unless-stopped
@@ -53,7 +74,7 @@ services:
   swagger:
     depends_on:
       - postgrest
-    image: swaggerapi/swagger-ui:v4.18.1
+    image: swaggerapi/swagger-ui:v5.32.8
     networks:
       net: {}
     restart: unless-stopped

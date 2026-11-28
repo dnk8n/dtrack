@@ -1,0 +1,155 @@
+# Single-server production stack, pull-based: every image is published by CI
+# (.github/workflows/images.yml) or upstream, nothing is built on the server.
+# Selected by COMPOSE_FILE=compose.server.yaml in the server's .env (template:
+# deploy/server.env.tpl). Setup steps: docs/deployment.md.
+#
+# - Only Traefik publishes ports (80, 443). Docker bypasses ufw for published
+#   ports, so nothing else may have a `ports:` entry.
+# - One Let's Encrypt certificate for ${HOST} via the HTTP-01 challenge on
+#   port 80 (no DNS provider, no wildcard, no extra hostnames).
+# - Postgres and PostgREST share the `backend` network; the UI, PostgREST and
+#   Swagger sit behind Traefik on `proxy`. `backend` is not `internal: true`
+#   because onboarding validates ID tokens against login.microsoftonline.com
+#   from inside Postgres (auth.decode_id_token).
+# - Every service logs to json-file with rotation, so logs can't fill the disk.
+# - Project name dtrack-server, distinct from the dev stack (dtrack), so the
+#   two never share containers, networks or the database volume.
+name: dtrack-server
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  traefik:
+    image: traefik:v3.7.20
+    command:
+      - --log.level=WARN
+      - --accesslog=true
+      - --api.dashboard=false
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=dtrack-server-proxy
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/acme/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./acme:/acme
+    networks: [proxy]
+    restart: unless-stopped
+    logging: *logging
+
+  postgres:
+    image: ghcr.io/${IMAGE_OWNER:-dnk8n}/dtrack-postgres:${IMAGE_TAG:?set IMAGE_TAG in .env}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [backend]
+    restart: unless-stopped
+    logging: *logging
+
+  # One-shot: applies pending migrations from the checkout's
+  # dtrack/db/migrations/ as admin. Run by initdb.sh
+  # (`docker compose run --rm migrate`); the profile keeps it out of `up`.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.37.0
+    profiles: [tools]
+    depends_on: [postgres]
+    command: migrate
+    environment:
+      DATABASE_URL: postgres://admin:${POSTGRES_PASSWORD_APP_ADMIN}@postgres:5432/dtrack?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_MIGRATIONS_TABLE: dbmate.schema_migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ./dtrack/db/migrations:/db/migrations:ro
+    networks: [backend]
+    logging: *logging
+
+  postgrest:
+    image: postgrest/postgrest:v14.15
+    depends_on: [postgres]
+    environment:
+      PGRST_APP_SETTINGS_AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      PGRST_APP_SETTINGS_AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      PGRST_DB_ANON_ROLE: ${PGRST_DB_ANON_ROLE}
+      PGRST_DB_PRE_REQUEST: pre.request
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD_APP}@postgres:5432/dtrack
+      PGRST_JWT_ROLE_CLAIM_KEY: ${PGRST_JWT_ROLE_CLAIM_KEY}
+      PGRST_JWT_SECRET: "@/config/jwt-secret"
+      PGRST_OPENAPI_MODE: ignore-privileges
+      PGRST_OPENAPI_SECURITY_ACTIVE: "true"
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${HOST}/api
+    volumes:
+      - ./keys/jwt-secret:/config/jwt-secret:ro
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.api.entrypoints: websecure
+      traefik.http.routers.api.rule: Host(`${HOST}`) && PathPrefix(`/api`)
+      traefik.http.routers.api.middlewares: api-stripprefix
+      traefik.http.middlewares.api-stripprefix.stripprefix.prefixes: /api
+      traefik.http.services.api.loadbalancer.server.port: "3000"
+    networks: [proxy, backend]
+    restart: unless-stopped
+    logging: *logging
+
+  react-admin:
+    image: ghcr.io/${IMAGE_OWNER:-dnk8n}/dtrack-ui:${IMAGE_TAG:?set IMAGE_TAG in .env}
+    environment:
+      # Read at container start (dtrack/ui/40-dtrack-config.sh).
+      MSAL_CLIENT_ID: ${AZURE_CLIENT_ID}
+      MSAL_AUTHORITY: https://login.microsoftonline.com/${AZURE_TENANT_ID}
+      APP_BASE_URI: https://${HOST}
+      API_BASE_URI: https://${HOST}/api
+      PALETTE_PRIMARY: ${PALETTE_PRIMARY:-}
+      PALETTE_SECONDARY: ${PALETTE_SECONDARY:-}
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.ui.entrypoints: websecure
+      traefik.http.routers.ui.rule: Host(`${HOST}`)
+      traefik.http.services.ui.loadbalancer.server.port: "80"
+    networks: [proxy]
+    restart: unless-stopped
+    logging: *logging
+
+  swagger:
+    image: swaggerapi/swagger-ui:v5.32.8
+    depends_on: [postgrest]
+    environment:
+      URLS: '[ { url: "https://${HOST}/api", name: "DTrack" } ]'
+      BASE_URL: /swagger
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.swagger.entrypoints: websecure
+      traefik.http.routers.swagger.rule: Host(`${HOST}`) && PathPrefix(`/swagger`)
+      traefik.http.services.swagger.loadbalancer.server.port: "8080"
+    networks: [proxy]
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres_data:
+
+networks:
+  proxy:
+    # Named explicitly: Traefik's --providers.docker.network refers to it.
+    name: dtrack-server-proxy
+  backend:

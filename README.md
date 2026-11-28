@@ -1,22 +1,75 @@
 # DTrack
 
-## Architecture
+Time tracking for teams, built SQL-first: the database **is** the application.
 
-## Using this repo
-- Dependencies:
-  - Setup AWS account, and IAM user, with policies (attach EC2 Full Access) -- TODO: Manage Terraform policies better
-  - User AWS CLI to configure account
-  - Install Terraform
-  - Install Ansible
-  - Github CLI (or otherwise get Github API token)
-  - Setup Cloudflare and add a domain as zone (get Cloudflare API token)
-- Clone repo (potentially some permissions are required if not public, and potentially you would want to fork it first, and clone your fork)
-- If setting up for the first time, generate key pairs (else get existing keys securely):
-  - `mkdir -p private/keys/instance private/keys/deploy`
-  - `ssh-keygen -t ed25519 -C "deankayton@gmail.com" -f private/keys/instance/id`
-  - `ssh-keygen -t ed25519 -C "deankayton@gmail.com" -f private/keys/deploy/id`
-- `cp terraform.tfvars.tpl terraform.tfvars` and modify what is applicable (mainly Cloudflare and Github token)
-- Provision Infrastructure (`terraform init` and `terraform apply` from root of repo)
-- Change workspace to 'prod' `terraform workspace new prod` and `terraform workspace select prod` and repeat last step
-- Staging is the default, so to go back, `terraform workspace select default`
-- It is possible to use Ansible to provision staging and prod simultaneously
+- **PostgreSQL 15** holds the schema, business logic (functions + triggers) and authorization (roles + row-level security). There is no application server.
+- **[PostgREST](https://postgrest.org)** exposes the `api` schema as a REST API.
+- **[react-admin](https://marmelab.com/react-admin/)** provides the single-page UI.
+- **Azure AD (MSAL)** authenticates users in production; a self-contained **demo login** makes local development possible without Azure.
+- **Terraform + Ansible** provision and deploy staging/production to AWS behind Cloudflare.
+
+## Quickstart (local, no Azure required)
+
+Prerequisites: Docker with the compose plugin (on macOS e.g. `colima start`) and this repo cloned.
+
+```sh
+make setup    # .env + keys from templates, bootstrap the database, start the stack
+```
+
+Then log in at <http://localhost:5174> as `Dummy.User@example.com` (any password field shown is ignored — demo mode signs a local JWT). The API is at <http://localhost:3000>, Swagger UI at <http://localhost:8080>.
+
+See [docs/development.md](docs/development.md) for the full guide, including dev-vs-demo modes and troubleshooting.
+
+## Setting up a new system from scratch
+
+If you are standing up DTrack for an organisation with nothing but this repo
+and a server, work through these in order:
+
+1. **Run it locally in demo mode:** [docs/development.md](docs/development.md)
+   (`make setup`). Confirms your machine and the test suites work (`make test`).
+2. **Create the Entra ID tenant, app registration and users, and prove real
+   Microsoft sign-in locally:** [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md)
+   sections 1–4. Optionally load realistic sample data from
+   [dtrack/dev/fixtures/simulated](dtrack/dev/fixtures/simulated/README.md).
+3. **Deploy to the server:** [docs/deployment.md](docs/deployment.md) (Terraform +
+   Ansible, or the manual single-server deploy), plus the server notes in
+   [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
+4. **Bring it into use:** [docs/runbooks/first-run.md](docs/runbooks/first-run.md):
+   who signs in first, what only the power user configures, then leads and
+   members.
+5. **Switch from a test tenant to the real one, and restore data if you have a
+   backup:** [new-tenant.md section 6](docs/runbooks/new-tenant.md#6-switch-an-existing-deployment-to-another-tenant)
+   and [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md).
+
+## Documentation
+
+| Doc | What it covers |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | System design: schemas, roles, RLS, request lifecycle, audit |
+| [docs/development.md](docs/development.md) | Running and working on DTrack locally |
+| [docs/testing.md](docs/testing.md) | Test strategy, how to run the suites, testing policies |
+| [docs/test-cases.md](docs/test-cases.md) | Natural-language test case catalog (`TC-…` ids) |
+| [docs/deployment.md](docs/deployment.md) | Provisioning infrastructure and deploying |
+| [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md) | Backup, test-restore and live-restore procedures |
+| [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md) | Entra ID (Azure) sign-in from scratch: tenant, app registration, users, local verification, server notes, switching tenants |
+| [docs/runbooks/first-run.md](docs/runbooks/first-run.md) | Bringing a new installation into use: roles in practice, what only the power user does, order of work |
+
+## Repository layout
+
+```
+dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by initdb.sh)
+dtrack/ui/           react-admin single-page app (Vite + TypeScript)
+dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
+dtrack/dev/fixtures/simulated/  Seeded demo data loader for local use
+tests/               pgTAP, API (Vitest) and E2E (Playwright) suites
+config/              Docker images, compose overrides, Ansible playbooks
+.github/             CI and operations workflows, their Ansible playbooks
+main.tf              Terraform: AWS EC2 + Cloudflare DNS + GitHub deploy keys
+```
+
+## Project status
+
+The current codebase is a deliberate stability baseline (tag: `mvp-baseline`). The
+focus is consolidation — documentation, developer experience, CI and test
+coverage — not new features. Application code (SQL and UI) is intentionally
+frozen while the safety net is built around it.

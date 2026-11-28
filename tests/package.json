@@ -1,0 +1,16 @@
+{
+  "name": "dtrack-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:api": "vitest run api",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
+    "jose": "^6.2.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

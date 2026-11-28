@@ -2,15 +2,95 @@ TERRAFORM_CMD = terraform
 ANSIBLE_CMD = ansible-playbook
 ANSIBLE_DIR = config/ansible
 
+# Compose file sets for the local stack. COMPOSE_FILE (colon-separated) is
+# docker compose's native mechanism, and initdb.sh honours it too, so every
+# target below operates on one consistent stack definition.
+COMPOSE_FILES_DEV = docker-compose.yaml:config/docker-compose.overrides/dev.yaml
+COMPOSE_FILES_DEMO = $(COMPOSE_FILES_DEV):config/docker-compose.overrides/demo.yaml
+COMPOSE_FILES_TEST = $(COMPOSE_FILES_DEMO):config/docker-compose.overrides/test.yaml
+COMPOSE_DEV = COMPOSE_FILE=$(COMPOSE_FILES_DEV) docker compose
+COMPOSE_DEMO = COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose
+
 env ?= null
 tf_env = $(if $(filter $(env),staging prod),$(env),$(if $(filter $(env),null),staging,$(error Invalid environment: $(env))))
 play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
-.PHONY: precommit infra infra-destroy play help
+.PHONY: precommit infra infra-destroy play help env setup dev demo initdb \
+	migrate migration power-user down clean test test-db test-api test-e2e
 
 precommit:
 	pre-commit run --all-files
+
+# Create local configuration from templates. Guarded: never overwrites
+# existing files, so it is safe on dev machines and deployed servers alike.
+env:
+	@test -f .env || { cp .env.tpl .env && echo "Created .env from .env.tpl"; }
+	@mkdir -p keys
+	@test -f keys/jwt-secret || printf 'Dummy5ecr3t4D3m00n1yN0T4Pr0D1234' > keys/jwt-secret
+
+# From nothing to a running demo-mode stack with a bootstrapped database.
+setup:
+	$(MAKE) env
+	$(MAKE) initdb
+	$(MAKE) demo
+
+dev:
+	$(COMPOSE_DEV) up -d --build
+
+demo:
+	$(COMPOSE_DEMO) up -d --build
+
+# Bootstrap (new cluster) and migrate the local database, then create the
+# local power user (POSTGRES_USER_APP_POWER in .env).
+initdb:
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./initdb.sh --dev-logging
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./power-user.sh
+
+# Apply pending migrations to the local database.
+migrate:
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose run --rm migrate
+
+# Create an empty migration: make migration NAME=add_widgets
+migration:
+	@test -n "$(NAME)" || { echo "usage: make migration NAME=add_widgets" >&2; exit 2; }
+	@f=dtrack/db/migrations/$$(date -u +%Y%m%d%H%M%S)_$(NAME).sql; \
+		printf -- '-- migrate:up\n\n\n-- migrate:down\n\n' > "$$f" && echo "Created $$f"
+
+# Make someone a power user on the local stack: make power-user EMAIL=...
+power-user:
+	@test -n "$(EMAIL)" || { echo "usage: make power-user EMAIL=someone@example.com" >&2; exit 2; }
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) ./power-user.sh "$(EMAIL)"
+
+down:
+	$(COMPOSE_DEMO) down
+
+clean:
+	$(COMPOSE_DEMO) down -v --remove-orphans
+	for suite in db api e2e; do \
+		COMPOSE_PROJECT_NAME=dtrack-test-$$suite \
+		COMPOSE_FILE=$(COMPOSE_FILES_TEST) \
+		docker compose down -v --remove-orphans; \
+	done
+
+# Each suite provisions its own isolated environment (needs only `make env`
+# beforehand); `make test` runs all three in parallel. See docs/testing.md.
+test:
+	./tests/run-all.sh
+
+test-db:
+	./tests/run-db-tests.sh
+
+test-api:
+	./tests/run-api-tests.sh
+
+test-e2e:
+	./tests/run-e2e-tests.sh
+
+# Revive a suite's stopped test environment for post-mortem/debugging (data
+# intact in its volume; never reruns tests), e.g. `make test-inspect-api`.
+test-inspect-%:
+	TEST_SUITE=$* ./tests/inspect-env.sh
 
 infra-init:
 	$(TERRAFORM_CMD) init -backend-config=backend.tfconf
@@ -30,6 +110,25 @@ play:
 
 help:
 	@echo "Available targets:"
+	@echo "  setup          One command from clone to running stack: env + initdb + demo."
+	@echo "  env            Create .env and keys/jwt-secret from templates (never overwrites)."
+	@echo "  dev            Start the local stack in dev mode (real Azure AD login)."
+	@echo "  demo          Start the local stack in demo mode (local JWT login, no Azure)."
+	@echo "  initdb         Bootstrap and migrate the database, create the local power user"
+	@echo "                   (idempotent; ./initdb.sh --force recreates)."
+	@echo "  migrate        Apply pending migrations (dtrack/db/migrations/)."
+	@echo "  migration      Create an empty migration: make migration NAME=add_widgets"
+	@echo "  power-user     Make someone a power user: make power-user EMAIL=..."
+	@echo "  down           Stop the local stack (data is kept)."
+	@echo "  clean          Stop the dev and test stacks and delete their data volumes."
+	@echo "  test           Run all test suites in parallel, each in its own freshly"
+	@echo "                   recreated isolated environment (needs only .env)."
+	@echo "  test-db        Run the pgTAP database tests."
+	@echo "  test-api       Run the HTTP tests against PostgREST."
+	@echo "  test-e2e       Run the Playwright end-to-end tests."
+	@echo "  test-inspect-<s>  Revive suite <s>'s stopped test environment (db|api|e2e)"
+	@echo "                   for post-mortem/debugging; never reruns tests, the last"
+	@echo "                   run's data is still in the volume."
 	@echo "  precommit      Manually run pre-commit hooks on all files."
 	@echo "  infra-init     Initialize Terraform with backend configuration."
 	@echo "  infra          Apply infrastructure configuration using Terraform."

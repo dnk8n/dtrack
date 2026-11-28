@@ -16,7 +16,7 @@ environments = {
     deploy_key_pub   = "keys/staging/deploy/id.pub"
     instance_key_pvt = "keys/staging/instance/id"
     instance_key_pub = "keys/staging/instance/id.pub"
-    override         = "staging-debug"
+    override         = "staging-demo"
 
     # Environment Secrets
     traefik_basicauth           = "dummy"

@@ -1,9 +1,12 @@
+import { config } from './config';
+
 let onboardInProgress = false;
 let lastOnboardFailureTime = 0;
 
 export interface EmployeeProfile {
   id: number;
   fullName: string;
+  email: string;
   roles: string[];
 }
 
@@ -15,9 +18,7 @@ export const getEmployeeProfile = async (
     // Too early to be able to use data provider here as it is not yet initialised at this stage
     // TODO: Possibly implement error handling in case the call to current_employee fails
     const response = await fetch(
-      `${
-        import.meta.env.VITE_API_BASE_URI
-      }/current_employee?select=id,first_name,last_name,roles`,
+      `${config.apiBaseUri}/current_employee?select=id,email,first_name,last_name,roles`,
       {
         method: 'GET',
         headers: {
@@ -31,6 +32,7 @@ export const getEmployeeProfile = async (
       const data = await response.json();
       return {
         id: data[0].id,
+        email: data[0].email,
         fullName: `${data[0].first_name} ${data[0].last_name}`,
         roles: data[0].roles,
       };
@@ -44,7 +46,7 @@ export const getEmployeeProfile = async (
             // 1 hour in milliseconds
             onboardInProgress = true;
             try {
-              await fetch(`${import.meta.env.VITE_API_BASE_URI}/rpc/onboard`, {
+              await fetch(`${config.apiBaseUri}/rpc/onboard`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',

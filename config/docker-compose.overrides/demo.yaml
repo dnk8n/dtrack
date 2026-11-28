@@ -1,0 +1,16 @@
+# Demo mode: a login form where anyone can sign in as any existing user,
+# with no password and no Microsoft account. For local machines, presenting
+# features and automated tests. NEVER run it on a live server holding real
+# data: the signing secret below is public.
+services:
+  postgrest:
+    environment:
+      PGRST_JWT_SECRET: Dummy5ecr3t4D3m00n1yN0T4Pr0D1234
+
+  react-admin:
+    image: react-admin:demo
+    build:
+      args:
+        BUILD_MODE: demo  # loads dtrack/ui/.env.demo
+        VITE_PALETTE_PRIMARY: "#8B8A94"
+        VITE_PALETTE_SECONDARY: "#C5C2C8"

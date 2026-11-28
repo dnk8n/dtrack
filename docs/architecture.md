@@ -1,0 +1,248 @@
+# Architecture
+
+DTrack is a SQL-first application. All business logic, data validation and
+authorization live in PostgreSQL; PostgREST turns the database's `api` schema
+into a REST API; a react-admin SPA consumes it. There is no hand-written
+application server.
+
+```
+                    Azure AD (production)          ┌──────────────┐
+                          │ OIDC / MSAL            │  swagger-ui  │ :8080
+                          ▼                        └──────┬───────┘
+┌─────────────┐  Bearer JWT   ┌───────────┐  SQL   ┌──────▼───────┐
+│ react-admin ├──────────────►│ PostgREST ├───────►│  PostgreSQL  │
+│  (nginx)    │ :5174 → :3000 │           │        │ + cyanaudit  │
+└─────────────┘               └───────────┘        └──────────────┘
+     SPA                    serves schema `api`    schema, logic, RLS
+```
+
+## Components
+
+| Service | Image | Pinned | Latest (July 2026) | Notes |
+| --- | --- | --- | --- | --- |
+| `postgres` | custom, from `postgres:15` | PG 15 | PG 18 (15 supported until Nov 2027) | Adds cyanaudit 2.2.3 (compiled from a vendored, checksum-verified copy of upstream commit 806f6c5, see [vendor/README.md](../config/dockerfiles/postgres/vendor/README.md)), plpython3u + `guardpost` (JWT validation), perl deps for cyanaudit tools. [Dockerfile](../config/dockerfiles/postgres/Dockerfile) |
+| `postgrest` | `postgrest/postgrest` | v14.15 | current (July 2026) | Serves schema `api`, anon role `anon`, pre-request `pre.request` |
+| `react-admin` | custom, node 24 (LTS) build → nginx | react-admin 4.9, Vite 4, TS 4.6 | react-admin 5.15, Vite 7, TS 5.x (majors need source migration — frozen) | Built with `VITE_*` build args; served as static SPA. [Dockerfile](../config/dockerfiles/react-admin/Dockerfile) |
+| `swagger` | `swaggerapi/swagger-ui` | v5.32.8 | current (July 2026) | Reads PostgREST's OpenAPI output |
+
+Version pins are part of the `mvp-baseline` line in the sand; upgrades are
+deliberate future work, not drive-by changes.
+
+## Database layout
+
+The database (default name `dtrack`) is organized by schema, with privileges
+increasing from left to right in the pipeline:
+
+| Schema | Purpose |
+| --- | --- |
+| `internal` | Base tables — the source of truth. Never exposed directly. |
+| `auth` | `users` table plus SECURITY DEFINER functions for user/role management |
+| `api` | Views + `INSTEAD OF` triggers — the only schema PostgREST serves |
+| `pre` | `pre.request()`, PostgREST's pre-request hook (sets `cyanaudit.uid`) |
+| `admin` | Cyanaudit inspection helpers (transactions, slowest, details) |
+| `cyanaudit` | Column-level audit log of all data changes |
+
+### Tables (`internal` + `auth`)
+
+```
+auth.users ─────────────┬────────────────────────────────┐
+                        │                                │
+internal.projects ──┬─ internal.user_project_roles       │  (is_lead flags PMs)
+                    ├─ internal.project_activities ── internal.activities
+                    ├─ internal.project_areas_of_work ── internal.areas_of_work
+                    │                                    │
+internal.time_trackings ── (user, project, activity, aow)│
+                                                         │
+internal.areas_of_expertise ── internal.aoe_hierarchies ─┘  (aoe, lead, member)
+internal.faqs
+```
+
+Key constraints:
+- `time_trackings.duration` must be a multiple of 15 minutes (CHECK constraint).
+- A member may belong to only one team (lead) per area of expertise (trigger
+  `check_unique_member_per_aoe`).
+- All FKs are `ON DELETE RESTRICT ON UPDATE CASCADE`; deletes cascade manually
+  inside the `INSTEAD OF DELETE` trigger functions.
+
+### The api view pattern
+
+Every resource the UI sees is an `api` view with `security_invoker = on`
+(so RLS applies to the calling user), plus `INSTEAD OF` triggers translating
+INSERT/UPDATE/DELETE on the view into writes against `internal` tables:
+
+| api view | write triggers | backing data |
+| --- | --- | --- |
+| `employees`, `current_employee`, `all_employees` | upsert + delete | `auth.users`, project/team memberships |
+| `projects` | upsert + delete (also grants/revokes `pm`) | `internal.projects` + join tables |
+| `activities`, `areas_of_work` | upsert + delete | respective tables + project links |
+| `areas_of_expertise` | upsert + delete | `internal.areas_of_expertise` |
+| `aoe_teams` | upsert + delete (also grants/revokes `lead`) | `internal.aoe_hierarchies` |
+| `time_trackings` | insert + update + delete | `internal.time_trackings` |
+| `faqs` | none (plain view, RLS on table) | `internal.faqs` |
+| `timetracking_summary(...)`, `duration_calendar` | read-only | dynamic aggregation for dashboard plots |
+
+Views aggregate related entities as JSONB (`{id, name}` pairs and `*_ids`
+arrays) so react-admin can render and edit relationships without extra
+round-trips. `aoe_teams` has a synthetic text ID: `lpad(aoe_id)||lpad(lead_id)`
+(4+4 digits), since a team is identified by (area of expertise, lead).
+
+## Identity, roles and authorization
+
+**Each user is a PostgreSQL role**, named by their email address. Group roles
+define capability tiers, granted cumulatively:
+
+```
+anon < basic < pm ─┐
+        basic < lead ─┴─< power  ( power BYPASSRLS; admin is member of power )
+```
+
+- `authenticator` is the only login role PostgREST
+  uses; it can `SET ROLE` to any user role.
+- PostgREST maps JWT claim `preferred_username` (an email) to the role —
+  `PGRST_JWT_ROLE_CLAIM_KEY=.preferred_username`.
+- `basic` is every user's default. `pm` and `lead` are granted/revoked
+  *automatically* by triggers: becoming a project lead grants `pm`; becoming
+  an AoE team supervisor grants `lead`. `power` is granted manually via
+  `auth.grant_power` (or the employees UI's `is_power` flag).
+- Role management uses SECURITY DEFINER functions in `auth`
+  (`create_user`, `del_user`, `grant_priv`, `revoke_priv`, `grant_power`,
+  `revoke_power`) — executable only by `power` (except `create_user`-via-
+  `api.onboard`, see below).
+
+**Row-level security** (see [014.schema.policies.sql](../dtrack/db/migrations/20261127000000_baseline.sql), section `014.schema.policies.sql`)
+enforces, roughly:
+
+- `time_trackings`: you see/write your own rows, plus rows of members you lead.
+- `projects`: visible to members, their leads, and lead-of-member chains;
+  writable by project leads (PMs); deletable only by `power`.
+- `users`: you see yourself plus people you lead/PM (and inverses); you update
+  only yourself.
+- `activities` / `areas_of_work`: readable by all; only `power` creates/deletes;
+  per-project links managed by that project's leads.
+- `areas_of_expertise` / `aoe_hierarchies`: visible to their leads and members;
+  leads manage their own team rows.
+- `faqs`: everyone reads published rows; only `power` writes/deletes.
+- `power` has `BYPASSRLS` — sees and can do everything.
+
+## Request lifecycle
+
+1. SPA sends a request with `Authorization: Bearer <JWT>`.
+2. PostgREST validates the JWT (`PGRST_JWT_SECRET`; in production a JWKS file
+   fetched from Azure by `rotate-keys.sh`, in demo mode a shared HS256 secret).
+3. PostgREST executes `SET LOCAL ROLE <preferred_username>` and calls
+   `pre.request()`, which stores the user's id in `cyanaudit.uid` so audit rows
+   are attributed.
+4. The query runs against `api.*` as that role; RLS and grants apply; INSTEAD
+   OF triggers translate writes; cyanaudit records column-level changes.
+
+### Onboarding
+
+A first-time user has a valid Azure JWT but no matching database role, so
+PostgREST returns a "role does not exist" error. The SPA then calls
+`POST /rpc/onboard` (executable by `anon`) with the **id token**;
+`api.onboard` validates the token *inside the database* — plpython3u +
+`guardpost` against the Azure tenant's JWKS — and calls `auth.create_user`,
+which creates the role, grants `basic`, and inserts into `auth.users`.
+The SPA retries and proceeds. Note: onboarding therefore requires real Azure
+tokens and does not work in demo mode; demo users must already exist
+(the initial power user, or users created via the Employees screen).
+
+## Audit — cyanaudit
+
+[Cyanaudit](https://bitbucket.org/neadwerx/cyanaudit) records every column
+change (who/what/when/old/new) in the `cyanaudit` schema. It is compiled into
+the postgres image, installed by the bootstrap
+(`dtrack/db/bootstrap/02.install-cyanaudit.sh`) and activated for the
+application schemas at the end of the baseline migration. Its event trigger
+adds new tables and columns in those schemas automatically. `admin.*` functions
+expose transaction history. Backups dump cyanaudit separately
+(`cyanaudit_dump.pl` / `cyanaudit_restore.pl`).
+
+## Database bootstrap and migrations
+
+[initdb.sh](../initdb.sh) brings the database up to date and is safe to run
+at any time. Nothing in the SQL is templated: the role and database names are
+fixed (`authenticator`, `admin`, `dtrack`), and the only secrets are passed
+to psql as variables.
+
+```
+dtrack/db/
+  bootstrap/        # superuser, once per new cluster (no `dtrack` database yet)
+    01.create-db.sql        on the maintenance DB: admin role, dtrack database
+    02.install-cyanaudit.sh on dtrack: cyanaudit
+    03.roles.sql            on dtrack: group roles, authenticator, auth schema
+    04.auth-mgmt.sql        on dtrack: plpython3u and superuser-owned auth.* functions
+  set-passwords.sql # superuser, every run: admin + authenticator passwords from .env
+  migrations/       # dbmate, as admin, every run: pending migrations in order
+    20261127000000_baseline.sql   the whole schema as of the move to dbmate (#47)
+  power-user.sql    # only via ./power-user.sh, never by initdb.sh
+```
+
+Migrations run through the compose `migrate` service
+([dbmate](https://github.com/amacneil/dbmate)), connecting as `admin`, so
+everything they create is owned by `admin` exactly as before. dbmate records
+applied versions in `dbmate.schema_migrations` and runs each migration in a
+transaction. Migrations are forward-only: never edit one that has been
+merged; write a new one (see [development.md](development.md#database-changes)).
+Anything that needs the superuser (a new untrusted-language function, a
+change to the `auth.*` role-management functions) cannot run as a migration
+and has to be done by hand on each server, so keep it rare.
+
+`initdb.sh` never creates a power user, so a restored database never collides
+with one. [power-user.sh](../power-user.sh) does that explicitly, once per new
+tenant. Backups leave out the `dbmate` schema; restores load data into a
+database that `initdb.sh` has already migrated (see
+[runbooks/backup-restore.md](runbooks/backup-restore.md)).
+
+## Front end
+
+`dtrack/ui` is a Vite + TypeScript react-admin app. One `<Resource>` per api
+view ([App.tsx](../dtrack/ui/src/App.tsx)); CRUD screens live in
+`src/sections/`; the dashboard renders D3 sunburst and calendar charts from
+`api.timetracking_summary` / `api.duration_calendar`.
+
+Two wiring modes, switched at build time by the Vite mode (`BUILD_MODE` build
+arg in the Dockerfile, `--mode demo` for local Vite). Demo mode loads
+[.env.demo](../dtrack/ui/.env.demo), which sets `VITE_ENVIRONMENT=DEMO`;
+production builds never read that file:
+
+- **Production/dev**: MSAL (`ra-auth-msal`) against Azure AD; data provider
+  `@raphiniert/ra-data-postgrest` attaches the MSAL id token.
+- **Demo**: a local login form signs an HS256 JWT in the browser
+  (`jsrsasign`) with `VITE_JWT_SECRET` from `.env.demo` — the same public,
+  demo-only secret PostgREST is given in
+  [demo.yaml](../config/docker-compose.overrides/demo.yaml). Any existing
+  user's email can be impersonated. Never deploy this mode.
+
+The UI's permission checks (e.g. hiding the Employee column for non-leads)
+are cosmetic; real enforcement is RLS in the database.
+
+## Infrastructure
+
+- **Terraform** ([main.tf](../main.tf)): AWS VPC + EC2 per workspace
+  (default = staging, `prod`), Cloudflare DNS, GitHub deploy keys. State in S3
+  (`backend.tfconf`).
+- **Ansible** ([config/ansible/base.playbook.yml](../config/ansible/base.playbook.yml)):
+  system updates, Docker, clone repo, render `.env` and
+  `docker-compose.override.yaml` (Traefik + TLS via the `staging`/`prod`
+  overrides), start stack.
+- **GitHub Actions** (deployed-instance operations, not CI):
+  [backup.yml](../.github/workflows/backup.yml) — bi-hourly backup with tiered
+  retention + automatic test-restore; [rotate-keys.yml](../.github/workflows/rotate-keys.yml)
+  — refreshes the Azure JWKS used as PostgREST's JWT secret.
+
+## Trust boundaries worth knowing about
+
+These flow from the design and are useful context when writing tests
+(they are *not* an invitation to change application code right now):
+
+- No tenant email domain is configured anywhere. `auth.del_user` only drops
+  roles that belong to an application user (a row in `auth.users`), and
+  `internal.employees_upsert` gives an employee created without an email the
+  creating user's own domain (`current_user` is that user's email).
+- `internal.aoe_teams_grant_or_revoke_privs` is SECURITY DEFINER and executable
+  by `basic` (flagged `TODO: potentially insecure` in the source).
+- The FAQ RLS policy hides unpublished rows from everyone, including their
+  authors (`power` bypasses RLS, so in practice only `power` manages FAQs).
+- Demo mode trusts any bearer of the shared secret; it exists for local
+  development, presenting features and tests, never for a live server.
