@@ -108,8 +108,13 @@ Rules that matter, all from the code:
 
 - **Use `first.last` before the `@`.** `auth.create_user` fills first and last
   name by splitting on `.`; `testuser1` gets an empty last name.
-- **Use lowercase, and copy the power user's UPN exactly.** Postgres role names
-  are case-sensitive and the role is `preferred_username` verbatim.
+- **Any case is fine, but copy UPNs exactly.** `Lena.Lead@<domain>` works as
+  well as `lena.lead@<domain>`. Entra sends the UPN in `preferred_username`
+  with its case as stored, and the user's Postgres role is that value
+  verbatim, so wherever you type a UPN yourself (`power-user.sh`, or an
+  employee you create on the Employees screen before they first sign in) it
+  must match the case Entra shows, or the user ends up twice (#83). Users who
+  simply sign in are onboarded with whatever case Entra sends.
 - **Use member users, not invited guests.** A guest's `preferred_username` is
   their home email (or contains `#EXT#`), which doesn't match the tenant. This
   includes the personal account you may have created the tenant with.
@@ -159,7 +164,7 @@ tenant state), go through this checklist:
 To inspect what the API receives, copy the ID token from the browser's
 localStorage (key containing `idtoken`) into [jwt.ms](https://jwt.ms): expect
 `ver` 2.0, `aud` = client ID, `iss` = the tenant issuer and
-`preferred_username` = the lowercase UPN.
+`preferred_username` = the UPN, case as shown in Entra.
 
 Realistic sample data for the lead and member (three months of time entries,
 created as those users) is available in
@@ -243,4 +248,5 @@ organisation's real one.
 | "Tenant '…' not found" | Wrong tenant ID or domain, or the tenant no longer exists. Check with the `curl` above. |
 | Sign-in works but the app offers to log out, and the user never appears | Onboarding failed. Check `docker compose logs postgres` for errors from `api.onboard` or `auth.decode_id_token` (no outbound HTTPS, wrong `AZURE_CLIENT_ID`, or tenant domain instead of GUID). Builds before the #70 fix fail here with `relation "users" does not exist`. |
 | Power user signs in but has no power | The email given to `power-user.sh` (locally: `POSTGRES_USER_APP_POWER`) didn't match the UPN exactly (case). Run `./power-user.sh <exact UPN>`. |
+| A user appears twice on the Employees screen, once with their projects and once empty | Someone created the employee before their first sign-in with a username whose case differs from the UPN (`lena.lead` for `Lena.Lead@…`). Sign-in onboarded the UPN as a separate user. Known gap (#83). Give the user who signed in (the UPN's case) the projects and teams, then delete the other one. |
 | API returns `JWSError`/`JWT invalid` | `keys/jwt-secret` doesn't hold this tenant's keys. Run `./rotate-keys.sh` and recreate postgrest. |

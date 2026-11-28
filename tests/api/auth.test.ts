@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { api, asUser, POWER_EMAIL, tokenFor } from './helpers';
+import { api, asUser, POWER_EMAIL, TEST_DOMAIN, tokenFor } from './helpers';
 
 describe('authentication and role switching', () => {
   test('TC-AUTH-101: anonymous requests cannot read data views', async () => {
@@ -32,6 +32,33 @@ describe('authentication and role switching', () => {
     expect(res.body[0].email).toBe(POWER_EMAIL);
     expect(res.body[0].is_power).toBe(true);
     expect(res.body[0].roles).toContain('power');
+  });
+
+  // Entra puts the UPN in preferred_username with its case as stored, and the
+  // Postgres role is that claim verbatim (always quoted with %I), so sign-in
+  // names need not be lowercase. The power user itself (Dummy.User@...) is
+  // already mixed case; this pins it for an ordinary user too.
+  const MIXED_EMAIL = `Api.Mixed.Case@${TEST_DOMAIN}`;
+
+  test('TC-AUTH-106: a user whose sign-in name has capitals authenticates as itself', async () => {
+    const power = await asUser(POWER_EMAIL);
+    const created = await power.post('/employees', { username: 'Api.Mixed', email: MIXED_EMAIL });
+    expect(created.status).toBeLessThan(300);
+    const res = await (await asUser(MIXED_EMAIL)).get('/current_employee');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].email).toBe(MIXED_EMAIL);
+    expect(res.body[0].first_name).toBe('Api');
+    expect(res.body[0].last_name).toBe('Mixed');
+    expect(res.body[0].is_power).toBe(false);
+  });
+
+  test('TC-AUTH-107: the sign-in name must match the employee email case exactly', async () => {
+    const power = await asUser(POWER_EMAIL);
+    await power.post('/employees', { username: 'Api.Mixed', email: MIXED_EMAIL });
+    const res = await (await asUser(MIXED_EMAIL.toLowerCase())).get('/current_employee');
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(JSON.stringify(res.body)).toMatch(/does not exist/);
   });
 
   test('TC-AUTH-105: the OpenAPI description is served at the API root', async () => {
