@@ -39,13 +39,13 @@ RUN apt-get update && \
 #
 # The SQL and the command come from named build contexts (compose
 # additional_contexts, build-push-action build-contexts):
-#   db  = dtrack/db    ops = dtrack/ops
+#   db = dtrack/db    ops-cmd = dtrack/ops
 FROM ghcr.io/amacneil/dbmate:2.37.0 AS dbmate
 
 FROM production AS ops
 COPY --from=dbmate /usr/local/bin/dbmate /usr/local/bin/dbmate
 COPY --from=db . /opt/dtrack/db
-COPY --from=ops dtrack-ops /usr/local/bin/dtrack-ops
+COPY --from=ops-cmd dtrack-ops /usr/local/bin/dtrack-ops
 ENV PGHOST=postgres \
     DBMATE_MIGRATIONS_DIR=/opt/dtrack/db/migrations \
     DBMATE_MIGRATIONS_TABLE=dbmate.schema_migrations \

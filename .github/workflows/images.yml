@@ -46,7 +46,7 @@ jobs:
             build-args: ""
             build-contexts: |
               db=./dtrack/db
-              ops=./dtrack/ops
+              ops-cmd=./dtrack/ops
           - image: dtrack-ui
             context: ./dtrack/ui
             dockerfile: ./config/dockerfiles/react-admin/Dockerfile

@@ -42,7 +42,7 @@ jobs:
           for target in production ops; do
             image=dtrack-postgres; [ "$target" = ops ] && image=dtrack-ops
             docker buildx build --load --target "$target" \
-              --build-context db=./dtrack/db --build-context ops=./dtrack/ops \
+              --build-context db=./dtrack/db --build-context ops-cmd=./dtrack/ops \
               -t "ghcr.io/${{ github.repository_owner }}/$image:$TAG" \
               ./config/dockerfiles/postgres
           done

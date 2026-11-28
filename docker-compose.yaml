@@ -27,7 +27,7 @@ services:
       target: ops
       additional_contexts:
         db: ./dtrack/db
-        ops: ./dtrack/ops
+        ops-cmd: ./dtrack/ops
     image: dtrack-ops:local
     profiles: [tools]
     depends_on:
