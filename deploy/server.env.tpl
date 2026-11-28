@@ -6,10 +6,11 @@
 # rotate-keys.sh) use the server stack.
 COMPOSE_FILE=compose.server.yaml
 
-# Images published by .github/workflows/images.yml. Pin a commit tag
-# (sha-<7 chars>) that matches the checked-out commit; see "Updating".
+# Images published by .github/workflows/images.yml. Pin the release version
+# (X.Y.Z, without the "v") matching the checked-out vX.Y.Z tag; a commit tag
+# (sha-<7 chars>) also works for unreleased builds. See "Updating".
 IMAGE_OWNER=dnk8n
-IMAGE_TAG=sha-0000000
+IMAGE_TAG=0.0.0
 
 # Public hostname (DNS A/AAAA record pointing at this server) and the
 # Let's Encrypt account contact.

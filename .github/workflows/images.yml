@@ -5,7 +5,7 @@
 # (RUNTIME_CONFIG=true), and Postgres gets everything from compose.
 #
 # Tags: sha-<short sha> on every published build (what servers pin), the
-# branch name, semver for v* tags, and latest on the default branch.
+# branch name, X.Y.Z and X.Y for vX.Y.Z tags, and latest on the default branch.
 # Pull requests build both images without publishing, to catch breakage.
 name: images
 
@@ -62,6 +62,7 @@ jobs:
             type=sha,prefix=sha-
             type=ref,event=branch
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v7
