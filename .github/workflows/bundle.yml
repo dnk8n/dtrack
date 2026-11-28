@@ -83,14 +83,14 @@ jobs:
           sleep 5
           # Empty the key file so the next rotation counts as a change.
           sudo docker compose run --rm -T --entrypoint sh ops -c ': > /keys/jwt-secret'
-          sudo docker compose run --rm -T ops rotate-keys | tee rotate.log
-          grep -q 'PostgREST told to reload' rotate.log
+          sudo docker compose run --rm -T ops rotate-keys | tee "$RUNNER_TEMP/rotate.log"
+          grep -q 'PostgREST told to reload' "$RUNNER_TEMP/rotate.log"
           for _ in $(seq 1 20); do
-            sudo docker compose logs postgrest | grep -qi 'reload' && break
+            sudo docker compose logs postgrest | grep -q 'Received a config reload message' && break
             sleep 1
           done
           sudo docker compose logs postgrest | tail -20
-          sudo docker compose logs postgrest | grep -qi 'reload'
+          sudo docker compose logs postgrest | grep -q 'Received a config reload message'
           test "$(sudo docker compose ps --status running -q postgrest | wc -l)" = 1
 
       - name: Container logs
