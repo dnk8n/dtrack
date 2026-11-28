@@ -1,6 +1,6 @@
 # Server .env for the pull-based single-server stack (compose.server.yaml).
 # Copy to the checkout root as .env, fill in every value, then: chmod 600 .env
-# Setup steps: docs/deployment.md.
+# Setup steps: docs/runbooks/server-install.md.
 
 # Makes plain `docker compose ...` (and initdb.sh, power-user.sh,
 # rotate-keys.sh) use the server stack.
@@ -8,7 +8,8 @@ COMPOSE_FILE=compose.server.yaml
 
 # Images published by .github/workflows/images.yml. Pin the release version
 # (X.Y.Z, without the "v") matching the checked-out vX.Y.Z tag; a commit tag
-# (sha-<7 chars>) also works for unreleased builds. See "Updating".
+# (sha-<7 chars>) also works for unreleased builds. See "Updating to a new
+# release" in the setup steps.
 IMAGE_OWNER=dnk8n
 IMAGE_TAG=0.0.0
 
@@ -31,6 +32,13 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=
 POSTGRES_PASSWORD_APP=
 POSTGRES_PASSWORD_APP_ADMIN=
+
+# Nightly backups (deploy/backup-db.sh, run from /etc/cron.d/dtrack): where
+# they go, the group that may read them (the backup pull account joins it) and
+# how many days are kept.
+BACKUP_DIR=/var/backups/dtrack
+BACKUP_GROUP=dtrack-backup
+RETAIN_DAYS=7
 
 # PostgREST (leave as is)
 PGRST_DB_ANON_ROLE=anon

@@ -185,7 +185,7 @@ restore a backup instead). Things specific to a server:
 - With Terraform + Ansible, set them per environment in `terraform.tfvars`
   (`azure_tenant_id`, `azure_client_id`, `postgres_user_app_power`); the
   playbook writes them into the server's `.env`. On a hand-built server, edit
-  `.env` directly (see [deployment.md](../deployment.md#single-server-deploy-pull-based)).
+  `.env` directly (see [server-install.md](server-install.md)).
 - Only the `prod` compose override signs in through Entra ID. The Terraform
   `staging` environment uses `staging-demo`, which has the demo login and
   ignores these values.

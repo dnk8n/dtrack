@@ -1,7 +1,7 @@
 # Single-server production stack, pull-based: every image is published by CI
 # (.github/workflows/images.yml) or upstream, nothing is built on the server.
 # Selected by COMPOSE_FILE=compose.server.yaml in the server's .env (template:
-# deploy/server.env.tpl). Setup steps: docs/deployment.md.
+# deploy/server.env.tpl). Setup steps: docs/runbooks/server-install.md.
 #
 # - Only Traefik publishes ports (80, 443). Docker bypasses ufw for published
 #   ports, so nothing else may have a `ports:` entry.

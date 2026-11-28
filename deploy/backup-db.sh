@@ -11,17 +11,19 @@
 # The same two parts the restore runbook (docs/runbooks/backup-restore.md)
 # expects: extract the tarball and use its directory as BACKUP_DIR there.
 # Backups older than RETAIN_DAYS are deleted, but only after a good backup.
+# BACKUP_DIR, BACKUP_GROUP and RETAIN_DAYS come from .env (defaults below).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/dtrack}"
-BACKUP_GROUP="${BACKUP_GROUP:-dtrack-backup}"
-RETAIN_DAYS="${RETAIN_DAYS:-7}"
 
 set -a
 # shellcheck source=/dev/null
 source .env
 set +a
+
+# Settings from .env (deploy/server.env.tpl), else these defaults.
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/dtrack}"
+BACKUP_GROUP="${BACKUP_GROUP:-dtrack-backup}"
+RETAIN_DAYS="${RETAIN_DAYS:-7}"
 
 umask 027
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
