@@ -177,7 +177,11 @@ with urllib.request.urlopen(url, timeout=30) as r:
 keys = json.loads(body).get("keys")
 if not isinstance(keys, list) or not keys:
     sys.exit("downloaded document has no keys; keeping the existing ones")
-open(out, "wb").write(body)
+# Canonical form (keys sorted by kid, fields sorted), so a response that
+# only differs in ordering doesn't count as new keys.
+keys.sort(key=lambda k: str(k.get("kid", "")))
+with open(out, "w") as f:
+    json.dump({"keys": keys}, f, sort_keys=True, separators=(",", ":"))
 PY
     if [[ -f "$KEYS_FILE" ]] && cmp -s "$new" "$KEYS_FILE"; then
         rm -f "$new"

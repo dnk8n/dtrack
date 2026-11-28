@@ -81,10 +81,13 @@ done
 ops power-user "${POSTGRES_USER_APP_POWER}"
 
 echo "--> ops rotate-keys into a keys volume"
+# A real tenant (Microsoft's own; its signing keys are public). The shared
+# "common" endpoint answers with different key sets from different servers.
+tenant=72f988bf-86f1-41af-91ab-2d7cd011db47
 keys_volume="${COMPOSE_PROJECT_NAME}-keys"
 docker volume rm -f "${keys_volume}" >/dev/null
-docker compose run --rm -T -e AZURE_TENANT_ID=common -v "${keys_volume}:/keys" ops rotate-keys
-docker compose run --rm -T -e AZURE_TENANT_ID=common -v "${keys_volume}:/keys" ops rotate-keys | grep -q unchanged ||
+docker compose run --rm -T -e AZURE_TENANT_ID="${tenant}" -v "${keys_volume}:/keys" ops rotate-keys
+docker compose run --rm -T -e AZURE_TENANT_ID="${tenant}" -v "${keys_volume}:/keys" ops rotate-keys | grep -q unchanged ||
     fail "second rotate-keys should report unchanged keys"
 perms="$(docker run --rm -v "${keys_volume}:/keys" --entrypoint stat dtrack-ops:local -c '%a %u' /keys/jwt-secret)"
 [[ "${perms}" == "600 1000" ]] || fail "keys file is '${perms}', expected '600 1000'"
