@@ -17,7 +17,7 @@ play_env = $(if $(filter $(env),staging prod),$(env),null)
 args ?=
 
 .PHONY: precommit infra infra-destroy play help env setup dev demo initdb \
-	migrate migration power-user down clean test test-db test-api test-e2e
+	migrate migration power-user down clean test test-db test-api test-e2e test-ops
 
 precommit:
 	pre-commit run --all-files
@@ -49,7 +49,7 @@ initdb:
 
 # Apply pending migrations to the local database.
 migrate:
-	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose run --rm migrate
+	COMPOSE_FILE=$(COMPOSE_FILES_DEMO) docker compose run --rm --build ops migrate
 
 # Create an empty migration: make migration NAME=add_widgets
 migration:
@@ -67,14 +67,14 @@ down:
 
 clean:
 	$(COMPOSE_DEMO) down -v --remove-orphans
-	for suite in db api e2e; do \
+	for suite in db api e2e ops; do \
 		COMPOSE_PROJECT_NAME=dtrack-test-$$suite \
 		COMPOSE_FILE=$(COMPOSE_FILES_TEST) \
 		docker compose down -v --remove-orphans; \
 	done
 
 # Each suite provisions its own isolated environment (needs only `make env`
-# beforehand); `make test` runs all three in parallel. See docs/testing.md.
+# beforehand); `make test` runs all of them in parallel. See docs/testing.md.
 test:
 	./tests/run-all.sh
 
@@ -86,6 +86,9 @@ test-api:
 
 test-e2e:
 	./tests/run-e2e-tests.sh
+
+test-ops:
+	./tests/run-ops-tests.sh
 
 # Revive a suite's stopped test environment for post-mortem/debugging (data
 # intact in its volume; never reruns tests), e.g. `make test-inspect-api`.
@@ -126,6 +129,7 @@ help:
 	@echo "  test-db        Run the pgTAP database tests."
 	@echo "  test-api       Run the HTTP tests against PostgREST."
 	@echo "  test-e2e       Run the Playwright end-to-end tests."
+	@echo "  test-ops       Run the server operations round trip (backup, restore, keys)."
 	@echo "  test-inspect-<s>  Revive suite <s>'s stopped test environment (db|api|e2e)"
 	@echo "                   for post-mortem/debugging; never reruns tests, the last"
 	@echo "                   run's data is still in the volume."

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all three test suites in parallel, each in its own isolated compose
+# Run all test suites in parallel, each in its own isolated compose
 # project (see tests/lib.sh). Per-suite output is captured to tests/logs/
 # and printed grouped when everything has finished.
 set -euo pipefail
@@ -10,17 +10,17 @@ cd "$(dirname "$0")"
 # each compile cyanaudit from scratch — warmed once, the parallel builds of
 # the per-project tags are pure cache hits).
 [ -d node_modules ] || npm ci
-echo "--> Warming the postgres image build cache"
+echo "--> Warming the postgres and ops image build cache"
 (
     export TEST_SUITE=db
     # shellcheck source=lib.sh
     source ./lib.sh
     cd "${REPO_ROOT}"
-    docker compose build postgres
+    docker compose --profile tools build postgres ops
 )
 
 mkdir -p logs
-suites=(db api e2e)
+suites=(db api e2e ops)
 pids=()
 for suite in "${suites[@]}"; do
     echo "--> Launching ${suite} suite (log: tests/logs/${suite}.log)"

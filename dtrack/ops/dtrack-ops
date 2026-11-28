@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# dtrack-ops: every database task for a DTrack installation, run from the
+# dtrack-ops image (config/dockerfiles/postgres/Dockerfile, target ops):
+#
+#   docker compose run --rm ops <command> [args]
+#
+# Commands:
+#   init [--dev-logging]  Bring the database up to date. Safe to run at any time:
+#                         bootstraps a new cluster (dtrack/db/bootstrap/), sets the
+#                         application role passwords, applies pending migrations.
+#                         On a server, also downloads the signing keys if missing.
+#   migrate               Apply pending migrations only.
+#   status                List migrations and whether each is applied.
+#   power-user <email>    Make someone a power user ("God mode"). Use sparingly.
+#   rotate-keys           Refresh the Entra ID signing keys PostgREST checks
+#                         tokens against; reload PostgREST if they changed.
+#   backup                Write dtrack-<UTC time>.tar into /backups; prune old ones.
+#   restore <file>        Load a backup (a .tar from `backup`, or a directory with
+#                         dtrack.dump and cyanaudit/) into a freshly initialised
+#                         database, then recreate the users' roles.
+#   psql [args]           psql as the admin role on the dtrack database.
+#
+# Configuration comes from the environment (compose passes .env through):
+#   PGHOST (default postgres), POSTGRES_USER, POSTGRES_PASSWORD,
+#   POSTGRES_PASSWORD_APP, POSTGRES_PASSWORD_APP_ADMIN, AZURE_TENANT_ID,
+#   KEYS_FILE (default /keys/jwt-secret), KEYS_UID (default 1000, the PostgREST
+#   image's user), BACKUP_GID, RETAIN_DAYS (default 7).
+set -euo pipefail
+
+DB_DIR=/opt/dtrack/db
+export PGHOST="${PGHOST:-postgres}"
+export PGPORT="${PGPORT:-5432}"
+KEYS_FILE="${KEYS_FILE:-/keys/jwt-secret}"
+KEYS_UID="${KEYS_UID:-1000}"
+BACKUP_ROOT=/backups
+RETAIN_DAYS="${RETAIN_DAYS:-7}"
+
+log() { echo "--> $*"; }
+die() {
+    echo "dtrack-ops: $*" >&2
+    exit 1
+}
+
+require() {
+    local var
+    for var in "$@"; do
+        [[ -n "${!var:-}" ]] || die "$var is not set (check .env)"
+    done
+}
+
+# psql as the superuser; SQL on stdin or via args.
+psql_superuser() {
+    local db="$1"
+    shift
+    PGPASSWORD="$POSTGRES_PASSWORD" psql --quiet --no-psqlrc --set ON_ERROR_STOP=1 \
+        -U "$POSTGRES_USER" -d "$db" "$@"
+}
+
+psql_admin() {
+    PGPASSWORD="$POSTGRES_PASSWORD_APP_ADMIN" psql --no-psqlrc --set ON_ERROR_STOP=1 \
+        -U admin -d dtrack "$@"
+}
+
+# Quote a value as a single-quoted psql meta-command argument.
+psql_quote() {
+    local s="${1//\\/\\\\}"
+    printf "'%s'" "${s//\'/\'\'}"
+}
+
+wait_for_postgres() {
+    local i
+    for i in $(seq 1 90); do
+        if pg_isready --quiet -U "$POSTGRES_USER" -d postgres; then
+            return 0
+        fi
+        [[ "$i" == 1 ]] && echo "Waiting for postgres at ${PGHOST}:${PGPORT}..."
+        sleep 1
+    done
+    die "postgres did not become ready within 90s"
+}
+
+dtrack_exists() {
+    [[ "$(psql_superuser postgres --tuples-only --no-align \
+        -c "SELECT count(*) FROM pg_database WHERE datname = 'dtrack'")" == "1" ]]
+}
+
+cmd_migrate() {
+    require POSTGRES_PASSWORD_APP_ADMIN
+    log "Applying migrations"
+    DATABASE_URL="postgres://admin:$(urlencode "$POSTGRES_PASSWORD_APP_ADMIN")@${PGHOST}:${PGPORT}/dtrack?sslmode=disable" \
+        dbmate --wait migrate
+}
+
+cmd_status() {
+    require POSTGRES_PASSWORD_APP_ADMIN
+    DATABASE_URL="postgres://admin:$(urlencode "$POSTGRES_PASSWORD_APP_ADMIN")@${PGHOST}:${PGPORT}/dtrack?sslmode=disable" \
+        dbmate status
+}
+
+urlencode() {
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+}
+
+cmd_init() {
+    local dev_logging=false arg
+    for arg in "$@"; do
+        case "$arg" in
+            --dev-logging) dev_logging=true ;;
+            *) die "usage: init [--dev-logging]" ;;
+        esac
+    done
+    require POSTGRES_USER POSTGRES_PASSWORD POSTGRES_PASSWORD_APP POSTGRES_PASSWORD_APP_ADMIN
+    wait_for_postgres
+
+    local bootstrapped=false
+    if ! dtrack_exists; then
+        log "Bootstrapping a new cluster"
+        psql_superuser postgres -o /dev/null <"$DB_DIR/bootstrap/01.create-db.sql"
+        PGPASSWORD="$POSTGRES_PASSWORD" bash "$DB_DIR/bootstrap/02.install-cyanaudit.sh" \
+            -U "$POSTGRES_USER" -d dtrack
+        psql_superuser dtrack -o /dev/null <"$DB_DIR/bootstrap/03.roles.sql"
+        psql_superuser dtrack -o /dev/null <"$DB_DIR/bootstrap/04.auth-mgmt.sql"
+        bootstrapped=true
+    fi
+
+    log "Setting application role passwords"
+    {
+        printf '\\set admin_password %s\n' "$(psql_quote "$POSTGRES_PASSWORD_APP_ADMIN")"
+        printf '\\set authenticator_password %s\n' "$(psql_quote "$POSTGRES_PASSWORD_APP")"
+        cat "$DB_DIR/set-passwords.sql"
+    } | psql_superuser postgres -o /dev/null
+
+    cmd_migrate
+
+    # Development only: log_statement = 'all' writes every statement,
+    # including sensitive data, to the server log. Both settings take effect
+    # on reload, so no restart is needed.
+    if [[ "$dev_logging" == true && "$bootstrapped" == true ]]; then
+        log "Enabling verbose statement logging (development)"
+        psql_superuser postgres -o /dev/null <<'SQL'
+ALTER SYSTEM SET log_statement = 'all';
+ALTER SYSTEM SET log_min_messages = 'notice';
+SELECT pg_reload_conf();
+SQL
+    fi
+
+    # On a server the keys live in a volume mounted at /keys: fetch them the
+    # first time, so PostgREST has them when it starts.
+    if [[ -d "$(dirname "$KEYS_FILE")" && ! -s "$KEYS_FILE" && -n "${AZURE_TENANT_ID:-}" ]]; then
+        cmd_rotate_keys
+    fi
+
+    echo "Database 'dtrack' is up to date."
+}
+
+cmd_power_user() {
+    [[ "$#" == 1 && -n "$1" ]] || die "usage: power-user <email>  (exactly the user's UPN)"
+    require POSTGRES_PASSWORD_APP_ADMIN
+    wait_for_postgres
+    log "Granting power to $1"
+    psql_admin --quiet -o /dev/null --set email="$1" <"$DB_DIR/power-user.sql"
+}
+
+cmd_rotate_keys() {
+    require AZURE_TENANT_ID
+    [[ -d "$(dirname "$KEYS_FILE")" ]] || die "$(dirname "$KEYS_FILE") is not mounted"
+    local url="https://login.microsoftonline.com/${AZURE_TENANT_ID}/discovery/v2.0/keys"
+    local new
+    new="$(mktemp)"
+    # Refuse anything that isn't a JWKS with at least one key, so an outage
+    # can never install an empty or partial key file.
+    python3 - "$url" "$new" <<'PY'
+import json, sys, urllib.request
+url, out = sys.argv[1], sys.argv[2]
+with urllib.request.urlopen(url, timeout=30) as r:
+    body = r.read()
+keys = json.loads(body).get("keys")
+if not isinstance(keys, list) or not keys:
+    sys.exit("downloaded document has no keys; keeping the existing ones")
+# Canonical form (keys sorted by kid, fields sorted), so a response that
+# only differs in ordering doesn't count as new keys.
+keys.sort(key=lambda k: str(k.get("kid", "")))
+with open(out, "w") as f:
+    json.dump({"keys": keys}, f, sort_keys=True, separators=(",", ":"))
+PY
+    if [[ -f "$KEYS_FILE" ]] && cmp -s "$new" "$KEYS_FILE"; then
+        rm -f "$new"
+        echo "Signing keys unchanged."
+        return 0
+    fi
+    # Write in place: keeps the inode PostgREST may have open, and owner/mode.
+    touch "$KEYS_FILE"
+    cat "$new" >"$KEYS_FILE"
+    rm -f "$new"
+    chown "$KEYS_UID" "$KEYS_FILE"
+    chmod 600 "$KEYS_FILE"
+    echo "Signing keys updated ($(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["keys"]))' "$KEYS_FILE") keys)."
+    # PostgREST re-reads its configuration, the key file included, when told
+    # to on its database channel. Harmless if PostgREST isn't running yet.
+    if dtrack_exists 2>/dev/null; then
+        psql_superuser dtrack -c "NOTIFY pgrst, 'reload config'" && echo "PostgREST told to reload."
+    fi
+}
+
+cmd_backup() {
+    require POSTGRES_USER POSTGRES_PASSWORD
+    [[ -d "$BACKUP_ROOT" ]] || die "$BACKUP_ROOT is not mounted"
+    wait_for_postgres
+    umask 027
+    local stamp work tmp final
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    work="$(mktemp -d)"
+    mkdir -p "$work/cyanaudit"
+
+    log "Dumping application data"
+    # Data only: the schema comes from the release (init) on restore. Without
+    # Cyan Audit (dumped below) and the dbmate history (the target has its own).
+    PGPASSWORD="$POSTGRES_PASSWORD" pg_dump -U "$POSTGRES_USER" -Fc \
+        --exclude-schema cyanaudit --exclude-schema dbmate --data-only \
+        -f "$work/dtrack.dump" dtrack
+    log "Dumping audit log"
+    PGPASSWORD="$POSTGRES_PASSWORD" /opt/cyanaudit/tools/cyanaudit_dump.pl \
+        -U "$POSTGRES_USER" -d dtrack "$work/cyanaudit/" >/dev/null
+
+    final="$BACKUP_ROOT/dtrack-$stamp.tar"
+    tmp="$BACKUP_ROOT/.dtrack-$stamp.tar.partial"
+    tar -C "$work" -cf "$tmp" dtrack.dump cyanaudit
+    if [[ -n "${BACKUP_GID:-}" ]]; then
+        chgrp "$BACKUP_GID" "$tmp"
+    fi
+    chmod 640 "$tmp"
+    mv "$tmp" "$final"
+    rm -rf "$work"
+    echo "backup written: $(basename "$final") ($(du -h "$final" | cut -f1))"
+
+    # Prune only after a good backup.
+    find "$BACKUP_ROOT" -maxdepth 1 -name 'dtrack-*.tar' -mtime +"$((RETAIN_DAYS - 1))" -print -delete
+}
+
+cmd_restore() {
+    [[ "$#" == 1 ]] || die "usage: restore <dtrack-YYYYMMDDTHHMMSSZ.tar | directory>  (relative to the backup directory)"
+    require POSTGRES_USER POSTGRES_PASSWORD POSTGRES_PASSWORD_APP_ADMIN
+    local src="$1"
+    [[ "$src" == /* ]] || src="$BACKUP_ROOT/$src"
+    [[ -e "$src" ]] || die "$src not found"
+    wait_for_postgres
+    dtrack_exists || die "no dtrack database: run 'init' first"
+
+    # Only into an empty database: restoring over data would mix the two.
+    local users
+    users="$(psql_superuser dtrack --tuples-only --no-align -c 'SELECT count(*) FROM auth.users')"
+    [[ "$users" == 0 ]] || die "the database already has $users users. Restore needs a fresh database (see the restore steps in docs/runbooks/server-install.md)."
+
+    local work="$src"
+    if [[ -f "$src" ]]; then
+        work="$(mktemp -d)"
+        tar -C "$work" -xf "$src"
+    fi
+    [[ -f "$work/dtrack.dump" && -d "$work/cyanaudit" ]] || die "$1 must contain dtrack.dump and cyanaudit/"
+
+    log "Restoring application data"
+    PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -U "$POSTGRES_USER" --disable-triggers \
+        --no-owner --data-only --exit-on-error -d dtrack "$work/dtrack.dump"
+    log "Restoring audit log"
+    shopt -s nullglob
+    local files=("$work"/cyanaudit/*.csv.gz)
+    if [[ "${#files[@]}" -gt 0 ]]; then
+        local out
+        out="$(PGPASSWORD="$POSTGRES_PASSWORD" /opt/cyanaudit/tools/cyanaudit_restore.pl \
+            -U "$POSTGRES_USER" -d dtrack "${files[@]}" 2>&1)"
+        printf '%s\n' "$out"
+        # cyanaudit_restore.pl skips a partition whose table already exists
+        # and still succeeds, which would silently drop that audit history.
+        if grep -q 'already exists, skipping' <<<"$out"; then
+            die "audit log partitions were skipped (see above): their history is not restored"
+        fi
+    fi
+    log "Recreating users' roles"
+    psql_admin --quiet <"$DB_DIR/restore-fixups.sql"
+    [[ "$work" == "$src" ]] || rm -rf "$work"
+    echo "Restore complete. Power isn't part of a backup: grant it again with 'power-user <email>'."
+}
+
+cmd_help() {
+    sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'
+}
+
+command="${1:-help}"
+shift || true
+case "$command" in
+    init) cmd_init "$@" ;;
+    migrate) cmd_migrate ;;
+    status) cmd_status ;;
+    power-user) cmd_power_user "$@" ;;
+    rotate-keys) cmd_rotate_keys ;;
+    backup) cmd_backup ;;
+    restore) cmd_restore "$@" ;;
+    psql) exec env PGPASSWORD="$POSTGRES_PASSWORD_APP_ADMIN" psql --no-psqlrc -U admin -d dtrack "$@" ;;
+    help | -h | --help) cmd_help ;;
+    *) die "unknown command '$command' (try: help)" ;;
+esac

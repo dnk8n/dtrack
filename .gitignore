@@ -19,3 +19,4 @@ tests/playwright-report/
 tests/logs/
 .DS_Store
 .github/ansible/hosts.ini
+dist/

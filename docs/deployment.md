@@ -87,171 +87,28 @@ Deploys of new code are the same playbook re-run (tag `deploy`).
 > environment whose data you need until that's fixed.
 
 Schema changes are applied by `./initdb.sh`, which runs pending migrations
-on every run (see "Updating" under the single-server deploy below).
+on every run (see "Updating to a new release" in
+[runbooks/server-install.md](runbooks/server-install.md#updating-to-a-new-release)).
 
 ## Single-server deploy (pull-based)
 
-The recommended path for one server you manage by hand. CI publishes the
-images ([images.yml](../.github/workflows/images.yml)) to GitHub Container
-Registry; the server only pulls them and never builds or needs CI access.
-The stack is [compose.server.yaml](../compose.server.yaml):
+The recommended path for one server you manage by hand:
+**[runbooks/server-install.md](runbooks/server-install.md)**, a step-by-step
+walkthrough with a check after every stage. It covers installing with a test
+Entra ID tenant, switching to the real one, restoring a backup, and updating
+to a new release.
 
-- Traefik is the only container with published ports (80, 443). Docker
-  bypasses ufw for published ports, so Postgres and the API have none.
-- One Let's Encrypt certificate for `HOST` via the HTTP-01 challenge on port
-  80. No DNS provider, wildcard or second hostname (no Traefik dashboard).
-- Every service uses json-file logging with rotation (10 MB × 5).
-- Nightly database backups and key rotation run from cron on the server.
-
-Everything lives in one directory, the repository checkout (this guide uses
-`/opt/dtrack`): compose file, `.env`, `keys/`, `acme/` and scripts. The
-checkout supplies `initdb.sh`, the bootstrap SQL and migrations it runs,
-`power-user.sh`, `rotate-keys.sh` and the backup script; the images (including
-the one-shot dbmate `migrate` service) supply everything that runs.
-
-### What the server needs
-
-- Ubuntu (or similar) with a public address, DNS A/AAAA record for `HOST`.
-- Inbound 80 and 443. Outbound DNS, HTTP/HTTPS (ghcr.io, Docker Hub,
-  login.microsoftonline.com, Let's Encrypt, github.com) and NTP.
-- An Entra ID app registration with `https://HOST/auth-callback` as an SPA
-  redirect URI ([runbooks/new-tenant.md](runbooks/new-tenant.md)).
-- Published images: after the first successful `images` workflow run, make
-  the `dtrack-postgres` and `dtrack-ui` packages public once
-  (`https://github.com/users/<owner>/packages/container/<package>/settings`
-  → Danger Zone → Change visibility → Public), or `docker login ghcr.io` on
-  the server with a read-only token.
-
-### Releases and image tags
-
-Deploy a release. Pushing a `vX.Y.Z` tag (semantic versioning; `0.y.z`
-until the first stable production release) makes the `images` workflow
-publish both images as `X.Y.Z` and `X.Y` as well as `sha-<7 chars>`. Each
-push to `main` publishes `main`, `latest` and `sha-<7 chars>`. Check out the
-same tag on the server as `IMAGE_TAG` names, so the scripts and SQL in the
-checkout match the images. Releases are listed at
-`https://github.com/<owner>/dtrack/releases`.
-
-### 1. Docker, with log rotation
-
-Install Docker Engine and the compose plugin from Docker's apt repository
-([docs.docker.com/engine/install/ubuntu](https://docs.docker.com/engine/install/ubuntu/)),
-then set default log rotation for any container and restart Docker:
-
-```sh
-sudo install -m 644 /dev/stdin /etc/docker/daemon.json <<'JSON'
-{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "5" } }
-JSON
-sudo systemctl restart docker
-sudo apt-get install -y git
-```
-
-Keep ufw and fail2ban as they are. Optionally stop containers reaching
-private networks (DNS stays allowed) with rules in the `DOCKER-USER` chain,
-for example `iptables -I DOCKER-USER -d 10.0.0.0/8 -j DROP` for each private
-range your organisation uses, persisted however your hosts persist iptables.
-Containers still need the outbound internet access listed above.
-
-### 2. Checkout, configuration and secrets
-
-```sh
-sudo git clone https://github.com/<owner>/dtrack.git /opt/dtrack
-cd /opt/dtrack
-sudo git checkout vX.Y.Z              # the release whose images you deploy
-
-sudo install -m 600 deploy/server.env.tpl .env
-sudo $EDITOR .env                     # every value; IMAGE_TAG=X.Y.Z (no "v")
-
-# Let's Encrypt account and certificate store (Traefik requires mode 600).
-sudo install -d -m 700 acme
-sudo install -m 600 /dev/null acme/acme.json
-
-# Signing-key file, readable only by the PostgREST container's user.
-sudo install -d -m 700 keys
-uid=$(sudo docker image inspect -f '{{.Config.User}}' postgrest/postgrest:v14.15 2>/dev/null \
-      || { sudo docker pull -q postgrest/postgrest:v14.15 >/dev/null; \
-           sudo docker image inspect -f '{{.Config.User}}' postgrest/postgrest:v14.15; })
-sudo install -m 600 -o "${uid:-0}" /dev/null keys/jwt-secret
-sudo chmod 711 keys
-sudo ./rotate-keys.sh                 # downloads the tenant's keys into keys/jwt-secret
-```
-
-`keys/jwt-secret` holds Microsoft's public signing keys (anyone can download
-them), but it is kept at 600 with the rest. `rotate-keys.sh` overwrites it in
-place, so owner and mode survive rotation.
-
-### 3. Start
-
-```sh
-sudo docker compose pull
-sudo ./initdb.sh                      # bootstraps the database and applies the migrations
-```
-
-Then either:
-
-- **New tenant, no data:** create the first administrator, exactly as their
-  UPN, and nobody else this way. The power user is "God mode" (bypasses
-  row-level security); further users sign in themselves and are managed from
-  the Employees screen.
-
-  ```sh
-  sudo ./power-user.sh admin.person@yourtenant.example
-  ```
-
-- **Moving an existing installation:** restore its backup now, before
-  starting the API and UI (live restore steps in the
-  [backup & restore runbook](runbooks/backup-restore.md)). Don't run
-  `power-user.sh` first: the restore brings the users with it.
-
-```sh
-sudo docker compose up -d
-sudo docker compose ps                # all services running
-```
-
-Traefik requests the certificate on first start; watch
-`sudo docker compose logs -f traefik` if `https://HOST` doesn't come up within
-a minute (usually DNS not yet pointing at the server, or port 80 blocked).
-Then continue with [runbooks/first-run.md](runbooks/first-run.md).
-
-`./initdb.sh` is safe to re-run: it bootstraps only a new cluster, resets the
-two application role passwords from `.env` and applies any pending
-migrations. `--force` deletes the database.
-
-### 4. Backups and key rotation (cron)
-
-```sh
-sudo groupadd --system dtrack-backup            # the backup pull account joins this group
-sudo usermod -aG dtrack-backup <backup-account>
-sudo install -m 644 deploy/cron.d-dtrack /etc/cron.d/dtrack
-sudo $EDITOR /etc/cron.d/dtrack                 # fix paths if not /opt/dtrack
-sudo deploy/backup-db.sh                        # first backup now, to check it works
-```
-
-[backup-db.sh](../deploy/backup-db.sh) writes `dtrack-<UTC time>.tar` (mode
-640, group `dtrack-backup`) into `/var/backups/dtrack` every night and keeps 7
-days. Override with `BACKUP_DIR`, `BACKUP_GROUP` and `RETAIN_DAYS` on the cron
-line. Each tarball holds `dtrack.dump` and `cyanaudit/`, the layout the
-[restore runbook](runbooks/backup-restore.md) expects. `rotate-keys.sh` runs
-every 6 hours and reloads PostgREST when Microsoft's keys change. Both log to
-the journal (`journalctl -t dtrack-backup`, `-t dtrack-keys`).
-
-### Updating
-
-```sh
-cd /opt/dtrack
-sudo git fetch --tags && sudo git checkout vX.Y.Z   # the new release
-sudo $EDITOR .env                     # IMAGE_TAG=X.Y.Z
-sudo docker compose pull
-sudo deploy/backup-db.sh              # a fresh backup before migrating
-sudo ./initdb.sh                      # applies pending migrations (no-op if none)
-sudo docker compose up -d
-```
-
-Migrations are applied while the old API keeps running; each one runs in a
-transaction, so a failed migration changes nothing. If it fails, stay on
-(or go back to) the previous release tag and image tag and investigate. A
-migration that rewrites large tables may want a short maintenance window:
-stop `postgrest` and `react-admin` before `./initdb.sh`.
+In short: CI publishes the images
+([images.yml](../.github/workflows/images.yml)) to GitHub Container Registry
+and attaches a release bundle to each GitHub release
+([bundle.yml](../.github/workflows/bundle.yml), sources in
+[deploy/server/](../deploy/server/)). The server needs no checkout: its
+`install.sh` places `compose.yaml` (images pinned to the release), `.env` and
+a cron file, and every database task (create, migrate, backup, restore, key
+rotation, power user) runs from the `dtrack-ops` image. Traefik is the only
+container with published ports (80, 443), one Let's Encrypt certificate for
+`HOST` comes through the HTTP-01 challenge, and every service logs to
+json-file with rotation.
 
 ## Scheduled operations (GitHub Actions)
 

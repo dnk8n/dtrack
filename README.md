@@ -31,9 +31,11 @@ and a server, work through these in order:
    Microsoft sign-in locally:** [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md)
    sections 1–4. Optionally load realistic sample data from
    [dtrack/dev/fixtures/simulated](dtrack/dev/fixtures/simulated/README.md).
-3. **Deploy to the server:** [docs/deployment.md](docs/deployment.md) (Terraform +
-   Ansible, or the manual single-server deploy), plus the server notes in
-   [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
+3. **Deploy to the server:** one server by hand, step by step, with
+   [docs/runbooks/server-install.md](docs/runbooks/server-install.md) (it
+   also covers step 5's tenant switch and restore on that server), or
+   Terraform + Ansible with [docs/deployment.md](docs/deployment.md) plus the
+   server notes in [new-tenant.md section 5](docs/runbooks/new-tenant.md#5-repeat-on-a-server).
 4. **Bring it into use:** [docs/runbooks/first-run.md](docs/runbooks/first-run.md):
    who signs in first, what only the power user configures, then leads and
    members.
@@ -50,6 +52,7 @@ and a server, work through these in order:
 | [docs/testing.md](docs/testing.md) | Test strategy, how to run the suites, testing policies |
 | [docs/test-cases.md](docs/test-cases.md) | Natural-language test case catalog (`TC-…` ids) |
 | [docs/deployment.md](docs/deployment.md) | Provisioning infrastructure and deploying |
+| [docs/runbooks/server-install.md](docs/runbooks/server-install.md) | Installing on one server by hand, step by step: test tenant, real tenant, restore, updates |
 | [docs/runbooks/backup-restore.md](docs/runbooks/backup-restore.md) | Backup, test-restore and live-restore procedures |
 | [docs/runbooks/new-tenant.md](docs/runbooks/new-tenant.md) | Entra ID (Azure) sign-in from scratch: tenant, app registration, users, local verification, server notes, switching tenants |
 | [docs/runbooks/first-run.md](docs/runbooks/first-run.md) | Bringing a new installation into use: roles in practice, what only the power user does, order of work |
@@ -57,7 +60,9 @@ and a server, work through these in order:
 ## Repository layout
 
 ```
-dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by initdb.sh)
+dtrack/db/           Database: superuser bootstrap and dbmate migrations (run by dtrack-ops init)
+dtrack/ops/          dtrack-ops: database tasks (init, backup, restore, keys), the ops image's command
+deploy/server/       Server release bundle: compose.yaml, .env template, cron, install.sh
 dtrack/ui/           react-admin single-page app (Vite + TypeScript)
 dtrack/dev/queries/  Helper SQL for operations (also used by restore automation)
 dtrack/dev/fixtures/simulated/  Seeded demo data loader for local use

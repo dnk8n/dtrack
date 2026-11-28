@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Make someone a power user: the "God mode" role that bypasses row-level
-# security and can change everything. Use it sparingly — normally once, for
-# the first administrator of a new tenant, who then manages everyone else
-# from the Employees screen (docs/runbooks/new-tenant.md). Idempotent.
+# Make someone a power user on the local stack: the "God mode" role that
+# bypasses row-level security and can change everything. Use it sparingly —
+# normally once, for the first administrator of a new tenant, who then
+# manages everyone else from the Employees screen
+# (docs/runbooks/new-tenant.md). Idempotent. A thin wrapper around
+# `dtrack-ops power-user`; servers run that directly.
 #
 #   ./power-user.sh someone@example.com
 #
@@ -25,6 +27,4 @@ if [[ -z "$email" || "$#" -gt 1 ]]; then
     exit 2
 fi
 
-echo "--> Granting power to ${email}"
-docker compose exec -T postgres psql --quiet --no-psqlrc --set ON_ERROR_STOP=1 \
-    -o /dev/null -U admin -d dtrack --set email="$email" <dtrack/db/power-user.sql
+docker compose run --rm --build ops power-user "$email"

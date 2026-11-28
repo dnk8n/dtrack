@@ -1,0 +1,123 @@
+# The server release bundle (deploy/server/): what a server installs from
+# instead of a checkout. docs/runbooks/server-install.md.
+#
+# - Every PR and push to main: build the bundle, install it into a scratch
+#   directory exactly as a server would, and run the server stack's database
+#   path (ops init, power-user, backup, rotate-keys with a PostgREST reload)
+#   against postgres and ops images built from this commit.
+# - A published release: attach dtrack-server-X.Y.Z.tar.gz and its .sha256
+#   to the release (compose.yaml pinned to the X.Y.Z images).
+name: bundle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server-smoke:
+    if: github.event_name != 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TAG: ci
+      DIR: /opt/dtrack-ci
+      BACKUP_DIR: /var/backups/dtrack-ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the postgres and ops images as the bundle names them
+        run: |
+          for target in production ops; do
+            image=dtrack-postgres; [ "$target" = ops ] && image=dtrack-ops
+            docker buildx build --load --target "$target" \
+              --build-context db=./dtrack/db --build-context ops-cmd=./dtrack/ops \
+              -t "ghcr.io/${{ github.repository_owner }}/$image:$TAG" \
+              ./config/dockerfiles/postgres
+          done
+
+      - name: Build the bundle
+        run: deploy/server/build-bundle.sh "$TAG" "${{ github.repository_owner }}" dist
+
+      - name: Install it as a server would
+        env:
+          HOST: dtrack.example.org
+          ACME_EMAIL: ops@example.org
+          # Microsoft's own tenant: its public signing keys are downloadable.
+          AZURE_TENANT_ID: 72f988bf-86f1-41af-91ab-2d7cd011db47
+          AZURE_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+          BACKUP_GROUP: dtrack-backup
+        run: |
+          cd dist && sha256sum -c "dtrack-server-$TAG.tar.gz.sha256"
+          tar -xzf "dtrack-server-$TAG.tar.gz"
+          sudo -E "./dtrack-server-$TAG/install.sh" --dir "$DIR" </dev/null
+          sudo stat -c '%a %U:%G %n' "$DIR/.env" "$DIR/acme/acme.json" "$BACKUP_DIR" /etc/cron.d/dtrack
+
+      - name: ops init, power-user, backup
+        working-directory: ${{ env.DIR }}
+        run: |
+          sudo docker compose up -d postgres
+          sudo docker compose run --rm -T ops init
+          sudo docker compose run --rm -T ops status
+          sudo docker compose run --rm -T ops power-user app.admin@example.org
+          sudo docker compose run --rm -T ops backup
+          sudo ls -l "$BACKUP_DIR"
+          f="$(sudo find "$BACKUP_DIR" -name 'dtrack-*.tar' | head -1)"
+          test "$(sudo stat -c '%a %G' "$f")" = "640 dtrack-backup"
+
+      - name: Keys in the volume, PostgREST reloads on rotation
+        working-directory: ${{ env.DIR }}
+        run: |
+          sudo docker compose up -d postgrest
+          sleep 5
+          # Empty the key file so the next rotation counts as a change.
+          sudo docker compose run --rm -T --entrypoint sh ops -c ': > /keys/jwt-secret'
+          sudo docker compose run --rm -T ops rotate-keys | tee "$RUNNER_TEMP/rotate.log"
+          grep -q 'PostgREST told to reload' "$RUNNER_TEMP/rotate.log"
+          for _ in $(seq 1 20); do
+            sudo docker compose logs postgrest | grep -q 'Received a config reload message' && break
+            sleep 1
+          done
+          sudo docker compose logs postgrest | tail -20
+          sudo docker compose logs postgrest | grep -q 'Received a config reload message'
+          test "$(sudo docker compose ps --status running -q postgrest | wc -l)" = 1
+
+      - name: Container logs
+        if: failure()
+        working-directory: ${{ env.DIR }}
+        run: sudo docker compose logs --no-color || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dtrack-server-bundle
+          path: dist/dtrack-server-*
+          retention-days: 7
+
+  attach:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build and attach the bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          deploy/server/build-bundle.sh "$version" "${{ github.repository_owner }}" dist
+          gh release upload "$RELEASE_TAG" --clobber \
+            "dist/dtrack-server-$version.tar.gz" "dist/dtrack-server-$version.tar.gz.sha256"

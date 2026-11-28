@@ -1,7 +1,7 @@
 # Build the deployable images and publish them to GitHub Container Registry,
-# so servers pull them instead of building (docs/deployment.md, single-server
-# deploy). The images hold no secrets and no deployment settings: the UI reads
-# its tenant, client and host from the container environment at start
+# so servers pull them instead of building (docs/runbooks/server-install.md).
+# The images hold no secrets and no deployment settings: the UI reads its
+# tenant, client and host from the container environment at start
 # (RUNTIME_CONFIG=true), and Postgres gets everything from compose.
 #
 # Tags: sha-<short sha> on every published build (what servers pin), the
@@ -36,11 +36,23 @@ jobs:
             dockerfile: ./config/dockerfiles/postgres/Dockerfile
             target: production
             build-args: ""
+            build-contexts: ""
+          # Database tasks for servers (dtrack/ops/dtrack-ops): the production
+          # postgres image plus dbmate, the SQL and the ops command.
+          - image: dtrack-ops
+            context: ./config/dockerfiles/postgres
+            dockerfile: ./config/dockerfiles/postgres/Dockerfile
+            target: ops
+            build-args: ""
+            build-contexts: |
+              db=./dtrack/db
+              ops-cmd=./dtrack/ops
           - image: dtrack-ui
             context: ./dtrack/ui
             dockerfile: ./config/dockerfiles/react-admin/Dockerfile
             target: ""
             build-args: RUNTIME_CONFIG=true
+            build-contexts: ""
     steps:
       - uses: actions/checkout@v7
 
@@ -71,6 +83,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           target: ${{ matrix.target }}
           build-args: ${{ matrix.build-args }}
+          build-contexts: ${{ matrix.build-contexts }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

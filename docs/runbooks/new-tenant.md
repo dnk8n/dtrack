@@ -179,13 +179,16 @@ Demo mode ignores `keys/jwt-secret`, so the JWKS file can stay.
 Repeat sections 2 to 4 with the server's values: the server's `HOST`
 redirect URI must be on the app registration, and the server's `.env` holds
 `AZURE_TENANT_ID` and `AZURE_CLIENT_ID`. Create the first power user once,
-after `./initdb.sh`, with `sudo ./power-user.sh <UPN>` (skip it when you
-restore a backup instead). Things specific to a server:
+after the database is initialised (single-server:
+`docker compose run --rm ops power-user <UPN>`; Terraform/Ansible:
+`./power-user.sh <UPN>`), and skip it when you restore a backup instead. The
+single-server walkthrough is [server-install.md](server-install.md). Things
+specific to a server:
 
 - With Terraform + Ansible, set them per environment in `terraform.tfvars`
   (`azure_tenant_id`, `azure_client_id`, `postgres_user_app_power`); the
   playbook writes them into the server's `.env`. On a hand-built server, edit
-  `.env` directly (see [deployment.md](../deployment.md#single-server-deploy-pull-based)).
+  `.env` directly (see [server-install.md](server-install.md)).
 - Only the `prod` compose override signs in through Entra ID. The Terraform
   `staging` environment uses `staging-demo`, which has the demo login and
   ignores these values.
@@ -195,9 +198,10 @@ restore a backup instead). Things specific to a server:
   them only needs `docker compose up -d`. The Terraform/Ansible stack still
   bakes them in at **build** time, so there the `react-admin` image must be
   rebuilt.
-- `./rotate-keys.sh` reloads PostgREST itself when the keys change. Schedule
-  it (the single-server cron file runs it every 6 hours) so the keys follow
-  Microsoft's key rotation.
+- Key rotation reloads PostgREST itself when the keys change, and must be
+  scheduled so the keys follow Microsoft's key rotation. The single-server
+  cron file runs `ops rotate-keys` every 6 hours; Terraform/Ansible servers
+  use `./rotate-keys.sh`.
 - The server must allow outbound HTTPS to `login.microsoftonline.com` for the
   key download and for onboarding (from inside the Postgres container).
 - Don't use the Ansible `deploy` play on a database you need: it wipes the
@@ -210,14 +214,19 @@ organisation's real one.
 
 1. Register the app in the new tenant (section 2) with the server's redirect
    URI.
-2. Set `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` in the server's `.env`, run
-   `./rotate-keys.sh`, then recreate the UI and API: `docker compose up -d --force-recreate react-admin postgrest`
-   (single-server stack). On the Terraform/Ansible stack add `--build`, since
-   its UI image bakes the IDs in.
+2. Set `AZURE_TENANT_ID` and `AZURE_CLIENT_ID` in the server's `.env`, then
+   refresh the keys and recreate the UI and API. Single-server stack:
+   `docker compose run --rm ops rotate-keys` and
+   `docker compose up -d react-admin postgrest` (see
+   [server-install.md stage 13](server-install.md#stage-13-real-tenant-credentials)).
+   Terraform/Ansible stack: `./rotate-keys.sh` and
+   `docker compose up -d --build --force-recreate react-admin postgrest`,
+   since its UI image bakes the IDs in.
 3. **Existing data.** Users are Postgres roles named after their UPN in the
    tenant they signed in with. Users from the new tenant have different UPNs
    and onboard as new, empty `basic` users. Create and promote the new power
-   user with `./power-user.sh first.last@<new-domain>`.
+   user with `ops power-user first.last@<new-domain>` (single-server) or
+   `./power-user.sh first.last@<new-domain>`.
 
    If you restore a production backup instead, the backup's users and roles
    come with it (see [backup-restore.md](backup-restore.md)).

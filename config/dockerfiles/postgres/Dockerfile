@@ -29,3 +29,26 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         postgresql-15-pgtap libtap-parser-sourcehandler-pgtap-perl && \
     rm -rf /var/lib/apt/lists/*
+
+# Operations image (dtrack-ops): the database's own client tools (psql,
+# pg_dump, Cyan Audit's install/dump/restore scripts) plus dbmate, the SQL
+# from dtrack/db and the dtrack-ops command. Servers run every database task
+# through it (`docker compose run --rm ops <command>`), so they need no
+# checkout of this repository. Built FROM production, so it shares that
+# image's layers and its client versions match the server exactly.
+#
+# The SQL and the command come from named build contexts (compose
+# additional_contexts, build-push-action build-contexts):
+#   db = dtrack/db    ops-cmd = dtrack/ops
+FROM ghcr.io/amacneil/dbmate:2.37.0 AS dbmate
+
+FROM production AS ops
+COPY --from=dbmate /usr/local/bin/dbmate /usr/local/bin/dbmate
+COPY --from=db . /opt/dtrack/db
+COPY --from=ops-cmd dtrack-ops /usr/local/bin/dtrack-ops
+ENV PGHOST=postgres \
+    DBMATE_MIGRATIONS_DIR=/opt/dtrack/db/migrations \
+    DBMATE_MIGRATIONS_TABLE=dbmate.schema_migrations \
+    DBMATE_NO_DUMP_SCHEMA=true
+ENTRYPOINT ["dtrack-ops"]
+CMD ["help"]
