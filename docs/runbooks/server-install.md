@@ -334,6 +334,8 @@ your values are filled in and the three database passwords are generated:
 ```sh
 cd "$APP_DIR"
 install -m 600 deploy/server.env.tpl .env
+# Templates up to v0.1.0 lack the backup settings; add them if missing.
+grep -q '^BACKUP_DIR=' .env || printf '\nBACKUP_DIR=\nBACKUP_GROUP=\nRETAIN_DAYS=7\n' >>.env
 sed -i \
   -e "s|^IMAGE_OWNER=.*|IMAGE_OWNER=$IMAGE_OWNER|" \
   -e "s|^IMAGE_TAG=.*|IMAGE_TAG=${RELEASE#v}|" \
