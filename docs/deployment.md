@@ -117,9 +117,20 @@ the one-shot dbmate `migrate` service) supply everything that runs.
 - An Entra ID app registration with `https://HOST/auth-callback` as an SPA
   redirect URI ([runbooks/new-tenant.md](runbooks/new-tenant.md)).
 - Published images: after the first successful `images` workflow run, make
-  the `dtrack-postgres` and `dtrack-ui` packages public once (GitHub →
-  your profile → Packages → package → Package settings → Change visibility),
-  or `docker login ghcr.io` on the server with a read-only token.
+  the `dtrack-postgres` and `dtrack-ui` packages public once
+  (`https://github.com/users/<owner>/packages/container/<package>/settings`
+  → Danger Zone → Change visibility → Public), or `docker login ghcr.io` on
+  the server with a read-only token.
+
+### Releases and image tags
+
+Deploy a release. Pushing a `vX.Y.Z` tag (semantic versioning; `0.y.z`
+until the first stable production release) makes the `images` workflow
+publish both images as `X.Y.Z` and `X.Y` as well as `sha-<7 chars>`. Each
+push to `main` publishes `main`, `latest` and `sha-<7 chars>`. Check out the
+same tag on the server as `IMAGE_TAG` names, so the scripts and SQL in the
+checkout match the images. Releases are listed at
+`https://github.com/<owner>/dtrack/releases`.
 
 ### 1. Docker, with log rotation
 
@@ -146,10 +157,10 @@ Containers still need the outbound internet access listed above.
 ```sh
 sudo git clone https://github.com/<owner>/dtrack.git /opt/dtrack
 cd /opt/dtrack
-sudo git checkout <commit>            # the commit whose images you deploy
+sudo git checkout vX.Y.Z              # the release whose images you deploy
 
 sudo install -m 600 deploy/server.env.tpl .env
-sudo $EDITOR .env                     # every value; IMAGE_TAG=sha-<first 7 of <commit>>
+sudo $EDITOR .env                     # every value; IMAGE_TAG=X.Y.Z (no "v")
 
 # Let's Encrypt account and certificate store (Traefik requires mode 600).
 sudo install -d -m 700 acme
@@ -228,8 +239,8 @@ the journal (`journalctl -t dtrack-backup`, `-t dtrack-keys`).
 
 ```sh
 cd /opt/dtrack
-sudo git fetch && sudo git checkout <new commit>
-sudo $EDITOR .env                     # IMAGE_TAG=sha-<new commit, 7 chars>
+sudo git fetch --tags && sudo git checkout vX.Y.Z   # the new release
+sudo $EDITOR .env                     # IMAGE_TAG=X.Y.Z
 sudo docker compose pull
 sudo deploy/backup-db.sh              # a fresh backup before migrating
 sudo ./initdb.sh                      # applies pending migrations (no-op if none)
@@ -238,7 +249,7 @@ sudo docker compose up -d
 
 Migrations are applied while the old API keeps running; each one runs in a
 transaction, so a failed migration changes nothing. If it fails, stay on
-(or go back to) the previous commit and image tag and investigate. A
+(or go back to) the previous release tag and image tag and investigate. A
 migration that rewrites large tables may want a short maintenance window:
 stop `postgrest` and `react-admin` before `./initdb.sh`.
 
